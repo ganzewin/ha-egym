@@ -1,6 +1,9 @@
 {
   "domain": "egym",
   "name": "EGYM",
+  "categories": [
+    "health_wellbeing"
+  ],
   "codeowners": [
     "@ganzewin"
   ],
