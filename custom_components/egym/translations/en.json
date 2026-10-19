@@ -1,0 +1,24 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "EGYM",
+        "description": "Log in with your EGYM Fitness app account. Leave Gym address empty to look it up automatically.",
+        "data": {
+          "email": "Email",
+          "password": "Password",
+          "name": "Name (for charts and sensors, e.g. Marcel)",
+          "base_url": "Gym address (e.g. https://yourgym.netpulse.com)"
+        }
+      }
+    },
+    "error": {
+      "discovery_failed": "No gym found for this email address. Enter the gym address.",
+      "invalid_auth": "Login refused. Check email and password.",
+      "cannot_connect": "Cannot reach EGYM."
+    },
+    "abort": {
+      "already_configured": "This account is already configured."
+    }
+  }
+}

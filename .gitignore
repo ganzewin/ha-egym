@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+# Personal EGYM exports never belong in the repo
+*.json.local
+sessies*.json
+overig*.json

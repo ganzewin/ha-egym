@@ -1,0 +1,24 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "EGYM",
+        "description": "Log in met het account van de EGYM Fitness-app. Laat Sportschooladres leeg om het automatisch te laten zoeken.",
+        "data": {
+          "email": "E-mailadres",
+          "password": "Wachtwoord",
+          "name": "Naam (voor grafieken en sensoren, bijv. Marcel)",
+          "base_url": "Sportschooladres (bijv. https://jouwgym.netpulse.com)"
+        }
+      }
+    },
+    "error": {
+      "discovery_failed": "Sportschool niet gevonden bij dit e-mailadres. Vul het sportschooladres in.",
+      "invalid_auth": "Inloggen geweigerd. Controleer e-mailadres en wachtwoord.",
+      "cannot_connect": "Kan EGYM niet bereiken."
+    },
+    "abort": {
+      "already_configured": "Dit account is al ingesteld."
+    }
+  }
+}
