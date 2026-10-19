@@ -146,27 +146,40 @@ def _value(node):
     return node.get("value") if isinstance(node, dict) else None
 
 
+def _sensor(name, value, unit, icon, attrs=None, measurement=True, enabled=True):
+    return {
+        "name": name,
+        "value": value,
+        "unit": unit,
+        "icon": icon,
+        "attrs": attrs or {},
+        "measurement": measurement and unit is not None,
+        "enabled": enabled,
+    }
+
+
 def current_values(bio_age, activity_level, imbalances):
-    """Current values for sensors: {key: (name, value, unit, attributes)}."""
+    """Sensors for values EGYM only gives as a current value: {key: sensor dict}."""
     bio = bio_age or {}
     strength = bio.get("strengthBioAgeDetails") or {}
+    age = "mdi:account-clock"
     values = {
-        "bio_leeftijd": ("Bio-leeftijd", _value((bio.get("totalDetails") or {}).get("totalBioAge")), "jaar", {}),
-        "bio_leeftijd_spieren": ("Bio-leeftijd spieren", _value(strength.get("muscleBioAge")), "jaar", {}),
-        "bio_leeftijd_bovenlichaam": ("Bio-leeftijd bovenlichaam", _value(strength.get("upperBodyAge")), "jaar", {}),
-        "bio_leeftijd_romp": ("Bio-leeftijd romp", _value(strength.get("coreAge")), "jaar", {}),
-        "bio_leeftijd_onderlichaam": ("Bio-leeftijd onderlichaam", _value(strength.get("lowerBodyAge")), "jaar", {}),
-        "bio_leeftijd_metabolisme": ("Bio-leeftijd metabolisme", _value((bio.get("metabolicDetails") or {}).get("metabolicAge")), "jaar", {}),
-        "bio_leeftijd_cardio": ("Bio-leeftijd cardio", _value((bio.get("cardioBioAgeDetails") or {}).get("cardioAge")), "jaar", {}),
-        "bio_leeftijd_flexibiliteit": ("Bio-leeftijd flexibiliteit", _value((bio.get("flexibilityDetails") or {}).get("flexibilityAge")), "jaar", {}),
+        "bio_leeftijd": _sensor("Bio-leeftijd", _value((bio.get("totalDetails") or {}).get("totalBioAge")), "jaar", age),
+        "bio_leeftijd_spieren": _sensor("Bio-leeftijd spieren", _value(strength.get("muscleBioAge")), "jaar", age),
+        "bio_leeftijd_bovenlichaam": _sensor("Bio-leeftijd bovenlichaam", _value(strength.get("upperBodyAge")), "jaar", age),
+        "bio_leeftijd_romp": _sensor("Bio-leeftijd romp", _value(strength.get("coreAge")), "jaar", age),
+        "bio_leeftijd_onderlichaam": _sensor("Bio-leeftijd onderlichaam", _value(strength.get("lowerBodyAge")), "jaar", age),
+        "bio_leeftijd_metabolisme": _sensor("Bio-leeftijd metabolisme", _value((bio.get("metabolicDetails") or {}).get("metabolicAge")), "jaar", age),
+        "bio_leeftijd_cardio": _sensor("Bio-leeftijd cardio", _value((bio.get("cardioBioAgeDetails") or {}).get("cardioAge")), "jaar", age),
+        "bio_leeftijd_flexibiliteit": _sensor("Bio-leeftijd flexibiliteit", _value((bio.get("flexibilityDetails") or {}).get("flexibilityAge")), "jaar", age),
     }
     level = activity_level or {}
     values.update({
-        "activiteit_punten": ("Activiteitspunten", level.get("points"), "punten", {}),
-        "activiteit_doel": ("Activiteitsdoel", level.get("goal"), "punten", {}),
-        "activiteit_behouden": ("Punten om niveau te behouden", level.get("maintainPoints"), "punten", {}),
-        "activiteit_dagen_over": ("Dagen over in periode", level.get("daysLeft"), "dagen", {}),
-        "activiteit_niveau": ("Activiteitsniveau", level.get("level"), None, {}),
+        "activiteit_punten": _sensor("Activiteitspunten", level.get("points"), "punten", "mdi:star-circle"),
+        "activiteit_doel": _sensor("Activiteitsdoel", level.get("goal"), "punten", "mdi:flag-checkered"),
+        "activiteit_behouden": _sensor("Punten om niveau te behouden", level.get("maintainPoints"), "punten", "mdi:shield-star"),
+        "activiteit_dagen_over": _sensor("Dagen over in periode", level.get("daysLeft"), "dagen", "mdi:calendar-clock"),
+        "activiteit_niveau": _sensor("Activiteitsniveau", level.get("level"), None, "mdi:trophy"),
     })
     for item in (imbalances or {}).get("muscleImbalances") or []:
         size = item.get("rangeSize") or 10000.0
@@ -174,10 +187,11 @@ def current_values(bio_age, activity_level, imbalances):
             continue
         key = f"spierbalans_{_slug(item.get('agonistMuscle'))}_{_slug(item.get('antagonistMuscle'))}"
         name = f"Spierbalans {item['agonistMuscle'].replace('_', ' ').lower()} / {item['antagonistMuscle'].replace('_', ' ').lower()}"
-        values[key] = (
+        values[key] = _sensor(
             name,
             round(item["position"] / size * 100, 1),
             "%",
+            "mdi:scale-balance",
             {
                 "optimaal_vanaf": round(item["optimalRangeStartPosition"] / size * 100, 1),
                 "optimaal_tot": round(item["optimalRangeEndPosition"] / size * 100, 1),
@@ -187,3 +201,45 @@ def current_values(bio_age, activity_level, imbalances):
             },
         )
     return values
+
+
+def latest_values(statistics):
+    """Most recent value per statistic, for "last measured" sensors: {object_id: dict}.
+
+    object_id is the statistic id without "egym:", so it matches the statistics.
+    gewicht and kracht use the heaviest value of the session, the rest the mean.
+    """
+    latest = {}
+    for statistic_id, stat in statistics.items():
+        if not stat["rows"]:
+            continue
+        start = max(stat["rows"])
+        row = stat["rows"][start]
+        object_id = statistic_id.split(":", 1)[1]
+        use_max = object_id.endswith("_gewicht") or object_id.startswith("kracht_")
+        latest[object_id] = {
+            "name": stat["name"].removeprefix("EGYM "),
+            "value": row["max"] if use_max else row["mean"],
+            "unit": stat["unit"],
+            "time": start.isoformat(),
+        }
+    return latest
+
+
+def latest_sensors(latest):
+    """Sensor dicts for latest_values() output; segment and height values start disabled."""
+    sensors = {}
+    for object_id, item in latest.items():
+        if object_id.startswith("oefening_"):
+            icon = "mdi:repeat" if object_id.endswith("_herhalingen") else "mdi:weight-kilogram"
+        elif object_id.startswith("kracht_"):
+            icon = "mdi:arm-flex"
+        else:
+            icon = "mdi:human"
+        enabled = not object_id.startswith(("lichaam_segmental_", "lichaam_height"))
+        # No state class: the history of these values already exists as statistics with the right dates
+        sensors[object_id] = _sensor(
+            item["name"], item["value"], item["unit"], icon,
+            {"gemeten_op": item["time"]}, measurement=False, enabled=enabled,
+        )
+    return sensors

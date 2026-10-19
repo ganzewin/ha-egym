@@ -4,6 +4,8 @@ from custom_components.egym.convert import (
     body_metric_types,
     body_metrics_to_statistics,
     current_values,
+    latest_sensors,
+    latest_values,
     strength_to_statistics,
     workouts_to_statistics,
 )
@@ -44,7 +46,29 @@ def test_body_metrics():
 
 def test_current_values():
     values = current_values(BIO_AGE, ACTIVITY_LEVEL, MUSCLE_IMBALANCES)
-    assert values["bio_leeftijd"][1] == 40
-    assert values["bio_leeftijd_cardio"][1] is None
+    assert values["bio_leeftijd"]["value"] == 40
+    assert values["bio_leeftijd_cardio"]["value"] is None
     balance = values["spierbalans_quadriceps_hamstring"]
-    assert balance[1] == 45.0 and balance[3]["optimaal_vanaf"] == 40.0
+    assert balance["value"] == 45.0 and balance["attrs"]["optimaal_vanaf"] == 40.0
+    assert balance["icon"] == "mdi:scale-balance" and balance["measurement"]
+    assert not values["activiteit_niveau"]["measurement"]
+
+
+def test_latest_values_and_sensors():
+    stats = {
+        **workouts_to_statistics(WORKOUTS),
+        **strength_to_statistics(STRENGTH),
+        **body_metrics_to_statistics(BODY_METRICS, "Europe/Amsterdam"),
+    }
+    latest = latest_values(stats)
+    assert latest["oefening_581_gewicht"]["value"] == 53.0  # heaviest set of the last session
+    assert latest["oefening_581_gewicht"]["name"] == "Leg Press gewicht"
+    assert latest["oefening_581_herhalingen"]["value"] == 40
+    assert latest["kracht_1002"]["value"] == 105
+    assert latest["lichaam_weight_kg"]["value"] == 80.0
+    sensors = latest_sensors(latest)
+    assert sensors["kracht_1002"]["attrs"]["gemeten_op"] == "2026-10-08T15:00:00+00:00"
+    assert not sensors["kracht_1002"]["measurement"]
+    assert sensors["kracht_1002"]["icon"] == "mdi:arm-flex"
+    assert latest_sensors({"lichaam_segmental_lean_trunk_kg": {**latest["lichaam_weight_kg"]}})[
+        "lichaam_segmental_lean_trunk_kg"]["enabled"] is False

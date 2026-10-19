@@ -20,6 +20,8 @@ from .convert import (
     body_metric_types,
     body_metrics_to_statistics,
     current_values,
+    latest_sensors,
+    latest_values,
     strength_to_statistics,
     workouts_to_statistics,
 )
@@ -63,13 +65,16 @@ class EgymCoordinator(DataUpdateCoordinator):
         super().__init__(hass, _LOGGER, name=DOMAIN, config_entry=entry, update_interval=SYNC_INTERVAL)
         self.store = Store(hass, STORAGE_VERSION, store_key(entry))
         self.last_sync = None
+        self.latest = {}
         self.person = person_name(entry)
         self.prefix = slugify(self.person)
 
     async def async_load(self) -> None:
         data = await self.store.async_load() or {}
-        if data.get("last_sync"):
+        # A store from before 0.4 has no "latest": sync everything once so all last-value sensors get filled
+        if data.get("last_sync") and "latest" in data:
             self.last_sync = datetime.date.fromisoformat(data["last_sync"])
+        self.latest = data.get("latest") or {}
 
     async def _async_update_data(self):
         today = dt_util.now().date()
@@ -105,7 +110,14 @@ class EgymCoordinator(DataUpdateCoordinator):
                 },
                 sorted(stat["rows"].values(), key=lambda row: row["start"]),
             )
+        # Later syncs only see recent days, so the newest value per statistic is kept in the store
+        for object_id, item in latest_values(statistics).items():
+            if object_id not in self.latest or item["time"] >= self.latest[object_id]["time"]:
+                self.latest[object_id] = item
         self.last_sync = today
-        await self.store.async_save({"last_sync": today.isoformat()})
+        await self.store.async_save({"last_sync": today.isoformat(), "latest": self.latest})
         _LOGGER.debug("EGYM sync %s..%s: %d statistics", start, today, len(statistics))
-        return current_values(data["bio_age"], data["activity_level"], data["muscle_imbalances"])
+        return {
+            **current_values(data["bio_age"], data["activity_level"], data["muscle_imbalances"]),
+            **latest_sensors(self.latest),
+        }

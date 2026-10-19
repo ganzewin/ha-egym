@@ -56,6 +56,13 @@ async def test_setup_imports_statistics_and_sensors(recorder_mock, enable_custom
         assert hass.states.get("sensor.egym_marcel_activiteitsniveau").state == "silver"
         assert hass.states.get("sensor.egym_marcel_spierbalans_quadriceps_hamstring").attributes["optimaal_tot"] == 60.0
 
+        # Last measured values as sensors, with their date
+        leg_press = hass.states.get("sensor.egym_marcel_leg_press_gewicht")
+        assert leg_press.state == "53.0" and leg_press.attributes["icon"] == "mdi:weight-kilogram"
+        assert "state_class" not in leg_press.attributes
+        assert hass.states.get("sensor.egym_marcel_leg_press_kracht").attributes["gemeten_op"].startswith("2026-10-08")
+        assert hass.states.get("sensor.egym_marcel_lichaamsgewicht").state == "80.0"
+
         # Later syncs only go back a few days, and re-importing does not duplicate rows
         assert calls[0] == datetime.date(2019, 1, 1)
         await entry.runtime_data.async_refresh()
@@ -133,3 +140,44 @@ async def test_name_with_space(recorder_mock, enable_custom_integrations, hass):
     ids = {i["statistic_id"] for i in await get_instance(hass).async_add_executor_job(list_statistic_ids, hass)}
     assert "egym:daan_jansen_kracht_1002" in ids
     assert hass.states.get("sensor.egym_daan_jansen_bio_leeftijd").state == "40"
+
+
+
+async def test_latest_survives_short_sync_and_new_exercise_appears(recorder_mock, enable_custom_integrations, hass):
+    entry = _entry()
+    entry.add_to_hass(hass)
+    first = all_data()
+    with patch(FETCH, return_value=first):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+    # A later sync that only sees one new exercise keeps the older sensors and adds the new one
+    later = {**all_data(), "workouts": [{
+        "completedAt": "2026-10-20T18:00:00", "timezone": "Europe/Amsterdam",
+        "exercises": [{"label": "EGYM Seated Row", "completedAt": "2026-10-20T18:00:00", "timezone": "Europe/Amsterdam",
+                       "activity": {"activityId": 334, "name": {"nl": "EGYM Seated Row"}},
+                       "sets": [{"setType": "REP_BASED", "numberOfReps": 20, "weight": 30.0}]}],
+    }], "strength": {}, "body_metrics": []}
+    with patch(FETCH, return_value=later):
+        await entry.runtime_data.async_refresh()
+        await hass.async_block_till_done()
+    assert hass.states.get("sensor.egym_marcel_seated_row_gewicht").state == "30.0"
+    assert hass.states.get("sensor.egym_marcel_leg_press_gewicht").state == "53.0"
+    assert hass.states.get("sensor.egym_marcel_leg_press_kracht").state == "105.0"
+
+
+async def test_ships_its_own_icon(enable_custom_integrations, hass):
+    from homeassistant.loader import async_get_integration
+    integration = await async_get_integration(hass, "egym")
+    assert integration.has_branding
+
+
+async def test_store_from_older_version_triggers_full_sync(recorder_mock, enable_custom_integrations, hass, hass_storage):
+    entry = _entry()
+    entry.add_to_hass(hass)
+    hass_storage[f"egym.{entry.entry_id}.v2"] = {"version": 1, "key": f"egym.{entry.entry_id}.v2", "data": {"last_sync": "2026-10-19"}}
+    starts = []
+    with patch(FETCH, side_effect=lambda e, p, b, start, end: starts.append(start) or all_data()):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+    assert starts == [datetime.date(2019, 1, 1)]
+    assert hass.states.get("sensor.egym_marcel_lichaamsgewicht").state == "80.0"
