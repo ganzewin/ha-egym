@@ -22,11 +22,11 @@ It reads your EGYM account and keeps the history in Home Assistant's long-term s
 | Activiteit | points, goal, progress towards the goal (%), points to keep the level, days left, level |
 | Bio-leeftijd | total, muscles, upper body, core, lower body, metabolic, cardio, flexibility |
 | Krachttest | last strength test per machine |
-| Lichaam | last body composition values from the Fitness Hub (segment values and height start disabled) |
+| Lichaam | last body composition values from the Fitness Hub (height starts disabled) |
 | Spierbalans | balance per muscle pair, with the optimal range as attributes |
 | Training | per exercise: weight of the heaviest set and total repetitions of the last session |
 
-Krachttest, Lichaam and Training sensors show the last measured value, with its time in the attribute `gemeten_op`; their history is in the statistics above, so these sensors have no state class on purpose. New exercises get a sensor after the next sync.
+Krachttest, Lichaam and Training sensors show the last measured value, with its time in the attribute `gemeten_op`; their history is in the statistics above, so these sensors have no state class on purpose. New exercises get a sensor after the next sync. Entities that were disabled before keep their setting after an update.
 
 Data is fetched every 6 hours and when Home Assistant starts. The first sync fetches everything since 2019.
 

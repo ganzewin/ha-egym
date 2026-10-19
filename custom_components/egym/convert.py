@@ -238,7 +238,7 @@ def latest_values(statistics):
 
 
 def latest_sensors(latest):
-    """Sensor dicts for latest_values() output; segment and height values start disabled."""
+    """Sensor dicts for latest_values() output; only height starts disabled."""
     sensors = {}
     for object_id, item in latest.items():
         if object_id.startswith("oefening_"):
@@ -247,7 +247,8 @@ def latest_sensors(latest):
             icon = "mdi:arm-flex"
         else:
             icon = "mdi:human"
-        enabled = not object_id.startswith(("lichaam_segmental_", "lichaam_height"))
+        # Height hardly changes for adults; everything else is measured again at the Fitness Hub
+        enabled = not object_id.startswith("lichaam_height")
         # No state class: the history of these values already exists as statistics with the right dates
         sensors[object_id] = _sensor(
             item["name"], item["value"], item["unit"], icon,

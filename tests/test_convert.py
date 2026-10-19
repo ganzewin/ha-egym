@@ -73,5 +73,9 @@ def test_latest_values_and_sensors():
     assert sensors["kracht_1002"]["attrs"]["gemeten_op"] == "2026-10-08T15:00:00+00:00"
     assert not sensors["kracht_1002"]["measurement"]
     assert sensors["kracht_1002"]["icon"] == "mdi:arm-flex"
-    assert latest_sensors({"lichaam_segmental_lean_trunk_kg": {**latest["lichaam_weight_kg"]}})[
-        "lichaam_segmental_lean_trunk_kg"]["enabled"] is False
+    extra = latest_sensors({
+        "lichaam_segmental_lean_trunk_kg": {**latest["lichaam_weight_kg"]},
+        "lichaam_height_cm": {**latest["lichaam_weight_kg"]},
+    })
+    assert extra["lichaam_segmental_lean_trunk_kg"]["enabled"] is True
+    assert extra["lichaam_height_cm"]["enabled"] is False
