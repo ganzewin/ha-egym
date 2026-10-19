@@ -107,3 +107,29 @@ async def test_config_flow(recorder_mock, enable_custom_integrations, hass):
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == "marcel"
     assert result["data"]["name"] == "marcel"
+
+
+async def test_name_from_email_when_empty(recorder_mock, enable_custom_integrations, hass):
+    entry = MockConfigEntry(
+        domain="egym", unique_id="daan.jansen@example.com",
+        data={"email": "daan.jansen@example.com", "password": "x", "name": "", "base_url": "https://gym.netpulse.com"},
+    )
+    entry.add_to_hass(hass)
+    with patch(FETCH, return_value=all_data()):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        await async_wait_recording_done(hass)
+    ids = {i["statistic_id"] for i in await get_instance(hass).async_add_executor_job(list_statistic_ids, hass)}
+    assert "egym:daan_jansen_kracht_1002" in ids
+    assert hass.states.get("sensor.egym_daan_jansen_bio_leeftijd").state == "40"
+
+
+async def test_name_with_space(recorder_mock, enable_custom_integrations, hass):
+    _entry("Daan Jansen", "daan@example.com").add_to_hass(hass)
+    with patch(FETCH, return_value=all_data()):
+        assert await hass.config_entries.async_setup(hass.config_entries.async_entries("egym")[0].entry_id)
+        await hass.async_block_till_done()
+        await async_wait_recording_done(hass)
+    ids = {i["statistic_id"] for i in await get_instance(hass).async_add_executor_job(list_statistic_ids, hass)}
+    assert "egym:daan_jansen_kracht_1002" in ids
+    assert hass.states.get("sensor.egym_daan_jansen_bio_leeftijd").state == "40"

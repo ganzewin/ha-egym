@@ -6,14 +6,14 @@ It reads your EGYM account and keeps the history in Home Assistant's long-term s
 
 ## What you get
 
-**Long-term statistics** (history, per person):
+**Long-term statistics** (history, per person; `<name>` is explained under [Setup](#setup)):
 
 | Statistic | Example id | Content |
 | --- | --- | --- |
-| Training weight per exercise | `egym:marcel_oefening_581_gewicht` | Mean, min and max weight over the sets of a session (kg) |
-| Repetitions per exercise | `egym:marcel_oefening_581_herhalingen` | Total repetitions of a session |
-| Strength test per machine | `egym:marcel_kracht_1002` | Strength value from the machine's strength test (kg) |
-| Body composition | `egym:marcel_lichaam_weight_kg` | Weight, BMI, body fat, muscle mass, visceral fat and more from the Fitness Hub |
+| Training weight per exercise | `egym:<name>_oefening_581_gewicht` | Mean, min and max weight over the sets of a session (kg) |
+| Repetitions per exercise | `egym:<name>_oefening_581_herhalingen` | Total repetitions of a session |
+| Strength test per machine | `egym:<name>_kracht_1002` | Strength value from the machine's strength test (kg) |
+| Body composition | `egym:<name>_lichaam_weight_kg` | Weight, BMI, body fat, muscle mass, visceral fat and more from the Fitness Hub |
 
 **Sensors** (current value): bio age (total, muscles, upper body, core, lower body, metabolic, cardio, flexibility), activity points and level, and muscle balance per muscle pair with its optimal range.
 
@@ -35,8 +35,22 @@ Copy `custom_components/egym` to `/config/custom_components/egym` and restart Ho
 Settings → Devices & services → Add integration → **EGYM**.
 
 - **Email / password**: your EGYM Fitness app login.
-- **Name**: used in the statistic ids, statistic names and the device, for example `Marcel`. Add the integration once per person to track several people in one Home Assistant.
+- **Name**: the person this account belongs to, for example `Daan`. Add the integration once per person to track several people in one Home Assistant.
 - **Gym address**: leave empty to look it up from your email address. If that fails, enter your gym's Netpulse address, for example `https://yourgym.netpulse.com`.
+
+### The name in ids and entities
+
+If you leave **Name** empty, the part of your email address before the `@` is used. The name is written in lowercase with underscores for the ids:
+
+| Name entered | Statistic id | Device | Sensor |
+| --- | --- | --- | --- |
+| `Daan` | `egym:daan_kracht_1002` | EGYM Daan | `sensor.egym_daan_bio_leeftijd` |
+| `Daan Jansen` | `egym:daan_jansen_kracht_1002` | EGYM Daan Jansen | `sensor.egym_daan_jansen_bio_leeftijd` |
+| *(empty)*, email `daan.jansen@example.com` | `egym:daan_jansen_kracht_1002` | EGYM daan.jansen | `sensor.egym_daan_jansen_bio_leeftijd` |
+
+To see which name an account uses, open Settings → Devices & services → EGYM: the name is the title of the entry. In a statistics graph card, type `egym:` to list all EGYM statistics.
+
+The name is set once, when you add the integration. To change it, remove the integration and add it again; statistics under the old name stay until you delete them in Developer tools → Statistics.
 
 ## Dashboard example
 
@@ -48,8 +62,8 @@ days_to_show: 180
 chart_type: line
 stat_types: [max]
 entities:
-  - egym:marcel_kracht_1002
-  - egym:marcel_kracht_998
+  - egym:daan_kracht_1002   # replace daan with your name
+  - egym:daan_kracht_998
 ```
 
 Strength tests and workouts use different activity ids for the same machine; the statistic names show which machine is which.
