@@ -4,8 +4,10 @@ from custom_components.egym.convert import (
     body_metric_types,
     body_metrics_to_statistics,
     current_values,
+    history_values,
     latest_sensors,
     latest_values,
+    merge_history,
     strength_to_statistics,
     workouts_to_statistics,
 )
@@ -60,7 +62,8 @@ def test_latest_values_and_sensors():
         **strength_to_statistics(STRENGTH),
         **body_metrics_to_statistics(BODY_METRICS, "Europe/Amsterdam"),
     }
-    latest = latest_values(stats)
+    history = history_values(stats)
+    latest = latest_values(history)
     assert latest["oefening_581_gewicht"]["value"] == 53.0  # heaviest set of the last session
     assert latest["oefening_581_gewicht"]["name"] == "Training Leg Press gewicht"
     assert latest["kracht_1002"]["name"] == "Krachttest Leg Press"
@@ -69,13 +72,32 @@ def test_latest_values_and_sensors():
     assert latest["oefening_581_herhalingen"]["value"] == 40
     assert latest["kracht_1002"]["value"] == 105
     assert latest["lichaam_weight_kg"]["value"] == 80.0
-    sensors = latest_sensors(latest)
+    sensors = latest_sensors(history)
     assert sensors["kracht_1002"]["attrs"]["gemeten_op"] == "2026-10-08T15:00:00+00:00"
     assert not sensors["kracht_1002"]["measurement"]
     assert sensors["kracht_1002"]["icon"] == "mdi:arm-flex"
     extra = latest_sensors({
-        "lichaam_segmental_lean_trunk_kg": {**latest["lichaam_weight_kg"]},
-        "lichaam_height_cm": {**latest["lichaam_weight_kg"]},
+        "lichaam_segmental_lean_trunk_kg": {**history["lichaam_weight_kg"], "name": "Lichaam spiermassa romp"},
+        "lichaam_height_cm": {**history["lichaam_weight_kg"], "name": "Lichaam lengte"},
     })
     assert extra["lichaam_segmental_lean_trunk_kg"]["enabled"] is True
     assert extra["lichaam_height_cm"]["enabled"] is False
+
+
+def test_chart_attributes_combine_sessions_and_strength_tests():
+    stats = {**workouts_to_statistics(WORKOUTS), **strength_to_statistics(STRENGTH)}
+    sensors = latest_sensors(history_values(stats))
+    attrs = sensors["oefening_581_gewicht"]["attrs"]
+    assert attrs["sessies"] == [["2026-10-01T08:00:00+00:00", 50.0], ["2026-10-08T15:00:00+00:00", 53.0]]
+    assert attrs["krachttest"] == [["2026-10-01T08:00:00+00:00", 100.0], ["2026-10-08T15:00:00+00:00", 105.0]]
+    assert sensors["oefening_581_herhalingen"]["attrs"]["sessies"][-1] == ["2026-10-08T15:00:00+00:00", 40]
+    assert "krachttest" not in sensors["oefening_581_herhalingen"]["attrs"]
+    assert sensors["oefening_333_gewicht"]["attrs"]["krachttest"] == []  # no test on this machine yet
+
+
+def test_merge_history_keeps_old_points():
+    full = history_values(workouts_to_statistics(WORKOUTS))
+    stored = merge_history({}, full)
+    recent = history_values(workouts_to_statistics(WORKOUTS[1:]))
+    merge_history(stored, recent)
+    assert len(stored["oefening_581_gewicht"]["points"]) == 2

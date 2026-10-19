@@ -20,8 +20,9 @@ from .convert import (
     body_metric_types,
     body_metrics_to_statistics,
     current_values,
+    history_values,
     latest_sensors,
-    latest_values,
+    merge_history,
     strength_to_statistics,
     workouts_to_statistics,
 )
@@ -65,7 +66,7 @@ class EgymCoordinator(DataUpdateCoordinator):
         super().__init__(hass, _LOGGER, name=DOMAIN, config_entry=entry, update_interval=SYNC_INTERVAL)
         self.store = Store(hass, STORAGE_VERSION, store_key(entry))
         self.last_sync = None
-        self.latest = {}
+        self.history = {}
         self.person = person_name(entry)
         self.prefix = slugify(self.person)
 
@@ -75,7 +76,7 @@ class EgymCoordinator(DataUpdateCoordinator):
         # and every statistic gets the current names
         if data.get("last_sync") and data.get("schema") == STORE_SCHEMA:
             self.last_sync = datetime.date.fromisoformat(data["last_sync"])
-        self.latest = data.get("latest") or {}
+        self.history = data.get("history") or {}
 
     async def _async_update_data(self):
         today = dt_util.now().date()
@@ -111,14 +112,12 @@ class EgymCoordinator(DataUpdateCoordinator):
                 },
                 sorted(stat["rows"].values(), key=lambda row: row["start"]),
             )
-        # Later syncs only see recent days, so the newest value per statistic is kept in the store
-        for object_id, item in latest_values(statistics).items():
-            if object_id not in self.latest or item["time"] >= self.latest[object_id]["time"]:
-                self.latest[object_id] = item
+        # Later syncs only see recent days, so the values per measurement are kept in the store
+        merge_history(self.history, history_values(statistics))
         self.last_sync = today
-        await self.store.async_save({"schema": STORE_SCHEMA, "last_sync": today.isoformat(), "latest": self.latest})
+        await self.store.async_save({"schema": STORE_SCHEMA, "last_sync": today.isoformat(), "history": self.history})
         _LOGGER.debug("EGYM sync %s..%s: %d statistics", start, today, len(statistics))
         return {
             **current_values(data["bio_age"], data["activity_level"], data["muscle_imbalances"]),
-            **latest_sensors(self.latest),
+            **latest_sensors(self.history),
         }

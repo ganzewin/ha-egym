@@ -214,35 +214,69 @@ def current_values(bio_age, activity_level, imbalances):
     return values
 
 
-def latest_values(statistics):
-    """Most recent value per statistic, for "last measured" sensors: {object_id: dict}.
+def history_values(statistics):
+    """One value per statistic and measurement: {object_id: {"name", "unit", "points": {iso time: value}}}.
 
     object_id is the statistic id without "egym:", so it matches the statistics.
     gewicht and kracht use the heaviest value of the session, the rest the mean.
     """
-    latest = {}
+    history = {}
     for statistic_id, stat in statistics.items():
-        if not stat["rows"]:
-            continue
-        start = max(stat["rows"])
-        row = stat["rows"][start]
         object_id = statistic_id.split(":", 1)[1]
         use_max = object_id.endswith("_gewicht") or object_id.startswith("kracht_")
-        latest[object_id] = {
+        history[object_id] = {
             "name": stat["name"],
-            "value": row["max"] if use_max else row["mean"],
             "unit": stat["unit"],
-            "time": start.isoformat(),
+            "points": {
+                start.isoformat(): row["max"] if use_max else row["mean"] for start, row in stat["rows"].items()
+            },
         }
+    return history
+
+
+def merge_history(stored, new):
+    """Add new points to the stored history; a newer sync wins for the same time."""
+    for object_id, item in new.items():
+        entry = stored.setdefault(object_id, {"name": item["name"], "unit": item["unit"], "points": {}})
+        entry["name"], entry["unit"] = item["name"], item["unit"]
+        entry["points"].update(item["points"])
+    return stored
+
+
+def latest_values(history):
+    """Most recent value per object_id in a history_values()/merge_history() dict."""
+    latest = {}
+    for object_id, item in history.items():
+        if not item["points"]:
+            continue
+        time = max(item["points"])
+        latest[object_id] = {"name": item["name"], "value": item["points"][time], "unit": item["unit"], "time": time}
     return latest
 
 
-def latest_sensors(latest):
-    """Sensor dicts for latest_values() output; only height starts disabled."""
+def _series(item):
+    return [[time, value] for time, value in sorted(item["points"].items())] if item else []
+
+
+def latest_sensors(history):
+    """Sensors with the last value per exercise, machine and body metric; only height starts disabled.
+
+    Training sensors also carry their whole history as the attribute "sessies", and the gewicht sensor
+    the strength tests of the same machine as "krachttest", so one chart per machine can show both.
+    """
+    strength_by_machine = {
+        item["name"].removeprefix("Krachttest "): item
+        for object_id, item in history.items() if object_id.startswith("kracht_")
+    }
     sensors = {}
-    for object_id, item in latest.items():
+    for object_id, item in latest_values(history).items():
+        attrs = {"gemeten_op": item["time"]}
         if object_id.startswith("oefening_"):
             icon = "mdi:repeat" if object_id.endswith("_herhalingen") else "mdi:weight-kilogram"
+            attrs["sessies"] = _series(history[object_id])
+            if object_id.endswith("_gewicht"):
+                machine = item["name"].removeprefix("Training ").removesuffix(" gewicht")
+                attrs["krachttest"] = _series(strength_by_machine.get(machine))
         elif object_id.startswith("kracht_"):
             icon = "mdi:arm-flex"
         else:
@@ -251,7 +285,6 @@ def latest_sensors(latest):
         enabled = not object_id.startswith("lichaam_height")
         # No state class: the history of these values already exists as statistics with the right dates
         sensors[object_id] = _sensor(
-            item["name"], item["value"], item["unit"], icon,
-            {"gemeten_op": item["time"]}, measurement=False, enabled=enabled,
+            item["name"], item["value"], item["unit"], icon, attrs, measurement=False, enabled=enabled,
         )
     return sensors

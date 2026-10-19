@@ -64,6 +64,7 @@ async def test_setup_imports_statistics_and_sensors(recorder_mock, enable_custom
         assert "state_class" not in leg_press.attributes
         assert hass.states.get("sensor.egym_marcel_krachttest_leg_press").attributes["gemeten_op"].startswith("2026-10-08")
         assert hass.states.get("sensor.egym_marcel_lichaam_gewicht").state == "80.0"
+        assert len(leg_press.attributes["sessies"]) == 2 and len(leg_press.attributes["krachttest"]) == 2
 
         # Later syncs only go back a few days, and re-importing does not duplicate rows
         assert calls[0] == datetime.date(2019, 1, 1)
@@ -163,7 +164,8 @@ async def test_latest_survives_short_sync_and_new_exercise_appears(recorder_mock
         await entry.runtime_data.async_refresh()
         await hass.async_block_till_done()
     assert hass.states.get("sensor.egym_marcel_training_seated_row_gewicht").state == "30.0"
-    assert hass.states.get("sensor.egym_marcel_training_leg_press_gewicht").state == "53.0"
+    leg_press = hass.states.get("sensor.egym_marcel_training_leg_press_gewicht")
+    assert leg_press.state == "53.0" and len(leg_press.attributes["sessies"]) == 2
     assert hass.states.get("sensor.egym_marcel_krachttest_leg_press").state == "105.0"
 
 
@@ -176,7 +178,7 @@ async def test_ships_its_own_icon(enable_custom_integrations, hass):
 async def test_store_from_older_version_triggers_full_sync(recorder_mock, enable_custom_integrations, hass, hass_storage):
     entry = _entry()
     entry.add_to_hass(hass)
-    hass_storage[f"egym.{entry.entry_id}.v2"] = {"version": 1, "key": f"egym.{entry.entry_id}.v2", "data": {"last_sync": "2026-10-19", "latest": {}}}
+    hass_storage[f"egym.{entry.entry_id}.v2"] = {"version": 1, "key": f"egym.{entry.entry_id}.v2", "data": {"schema": 2, "last_sync": "2026-10-19", "latest": {}}}
     starts = []
     with patch(FETCH, side_effect=lambda e, p, b, start, end: starts.append(start) or all_data()):
         assert await hass.config_entries.async_setup(entry.entry_id)

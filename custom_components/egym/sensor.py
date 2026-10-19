@@ -32,6 +32,8 @@ async def async_setup_entry(
 
 class EgymSensor(CoordinatorEntity[EgymCoordinator], SensorEntity):
     _attr_has_entity_name = True
+    # Chart data for dashboards; the recorder does not need it, the statistics already hold it
+    _unrecorded_attributes = frozenset({"sessies", "krachttest"})
 
     def __init__(self, coordinator: EgymCoordinator, entry: ConfigEntry, key: str) -> None:
         super().__init__(coordinator)

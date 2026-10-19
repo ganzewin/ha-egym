@@ -83,6 +83,45 @@ A Krachttest statistic only gets a point when the machine runs a strength test, 
 
 Strength tests and workouts use different activity ids for the same machine; the statistic names show which machine is which.
 
+### Progress per machine with ApexCharts
+
+The Training gewicht sensors carry their history as attributes: `sessies` (heaviest set per session) and `krachttest` (the strength tests of the same machine). With [apexcharts-card](https://github.com/RomRider/apexcharts-card) that gives one chart per machine, with the strength test as a stepped baseline and the training weight per session as a line:
+
+```yaml
+type: custom:apexcharts-card
+header:
+  show: true
+  title: Leg Press
+  show_states: true
+  colorize_states: true
+graph_span: 90d
+span:
+  end: day
+yaxis:
+  - min: 0
+    decimals: 0
+series:
+  - entity: sensor.egym_daan_training_leg_press_gewicht   # replace daan with your name
+    name: Training
+    curve: straight
+    stroke_width: 3
+    extend_to: false
+    data_generator: |
+      return (entity.attributes.sessies || []).map(p => [new Date(p[0]).getTime(), p[1]]);
+  - entity: sensor.egym_daan_training_leg_press_gewicht
+    name: Krachttest
+    curve: stepline
+    stroke_width: 2
+    stroke_dash: 6
+    extend_to: now
+    show:
+      in_header: false
+    data_generator: |
+      return (entity.attributes.krachttest || []).map(p => [new Date(p[0]).getTime(), p[1]]);
+```
+
+These attributes are not written to the recorder; the statistics already hold the same history.
+
 ## Icon
 
 The integration brings its own icon in `custom_components/egym/brand/`. Home Assistant shows it on the integration and device pages. It is an original image, not the EGYM logo.
