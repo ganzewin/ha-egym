@@ -3,12 +3,12 @@
     "step": {
       "user": {
         "title": "EGYM",
-        "description": "Log in met het account van de EGYM Fitness-app. Laat Sportschooladres leeg om het automatisch te laten zoeken.",
+        "description": "Log in met het account van de EGYM Fitness-app. Laat Sportschooladres leeg om het automatisch te laten zoeken. Lukt dat niet, vul dan het Netpulse-adres van je sportschool in, bijvoorbeeld {example_url}.",
         "data": {
           "email": "E-mailadres",
           "password": "Wachtwoord",
           "name": "Naam (voor grafieken en sensoren, bijv. Marcel)",
-          "base_url": "Sportschooladres (bijv. https://jouwgym.netpulse.com)"
+          "base_url": "Sportschooladres"
         }
       }
     },

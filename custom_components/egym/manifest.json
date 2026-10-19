@@ -9,6 +9,7 @@
     "recorder"
   ],
   "documentation": "https://github.com/ganzewin/ha-egym",
+  "integration_type": "service",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/ganzewin/ha-egym/issues",
   "requirements": [

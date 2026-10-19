@@ -58,5 +58,8 @@ class EgymConfigFlow(ConfigFlow, domain=DOMAIN):
                     },
                 )
         return self.async_show_form(
-            step_id="user", data_schema=self.add_suggested_values_to_schema(SCHEMA, user_input), errors=errors
+            step_id="user",
+            data_schema=self.add_suggested_values_to_schema(SCHEMA, user_input),
+            errors=errors,
+            description_placeholders={"example_url": "https://yourgym.netpulse.com"},
         )
