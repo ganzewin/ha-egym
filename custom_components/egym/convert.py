@@ -11,7 +11,7 @@ _RANGE_SUFFIX = re.compile(r"_(LOW|TOP)(_|$)")
 
 # type -> (Dutch name, unit, unit_class, factor)
 BODY_METRICS = {
-    "WEIGHT_KG": ("Lichaamsgewicht", "kg", "mass", 1),
+    "WEIGHT_KG": ("Gewicht", "kg", "mass", 1),
     "BMI": ("BMI", None, None, 1),
     "BODY_FAT_PERCENTS": ("Vetpercentage", "%", None, 1),
     "BODY_FAT_MASS_KG": ("Vetmassa", "kg", "mass", 1),
@@ -40,6 +40,11 @@ def _slug(text):
 
 def _hour(moment):
     return moment.astimezone(datetime.UTC).replace(minute=0, second=0, microsecond=0)
+
+
+def _machine(name):
+    """'EGYM Leg Press' -> 'Leg Press'."""
+    return (name or "").removeprefix("EGYM ").strip()
 
 
 def _parse(value, zone_name):
@@ -103,8 +108,10 @@ def workouts_to_statistics(workouts):
 
     result = {}
     for (key, start), entry in collected.items():
-        _add(result, f"{DOMAIN}:{key}_gewicht", f"{entry['name']} gewicht", "kg", "mass", start, entry["weights"])
-        _add(result, f"{DOMAIN}:{key}_herhalingen", f"{entry['name']} herhalingen", "herhalingen", None, start, [entry["reps"]])
+        # Names start with a group word, so sensors and chart legends sort per group
+        name = _machine(entry["name"])
+        _add(result, f"{DOMAIN}:{key}_gewicht", f"Training {name} gewicht", "kg", "mass", start, entry["weights"])
+        _add(result, f"{DOMAIN}:{key}_herhalingen", f"Training {name} herhalingen", "herhalingen", None, start, [entry["reps"]])
     return _finish(result)
 
 
@@ -118,7 +125,7 @@ def strength_to_statistics(strength):
             continue
         start = _hour(_parse(item["createdAt"], item.get("timezone")))
         label = activity.get("label") or f"Toestel {activity['activityId']}"
-        _add(result, f"{DOMAIN}:kracht_{activity['activityId']}", f"{label} kracht", "kg", "mass", start, [float(value)])
+        _add(result, f"{DOMAIN}:kracht_{activity['activityId']}", f"Krachttest {_machine(label)}", "kg", "mass", start, [float(value)])
     return _finish(result)
 
 
@@ -138,7 +145,8 @@ def body_metrics_to_statistics(body_metrics, zone_name):
                 continue
             day = datetime.date.fromisoformat(point["date"])
             start = _hour(datetime.datetime.combine(day, datetime.time(12), zone))
-            _add(result, f"{DOMAIN}:lichaam_{_slug(metric_type)}", name, unit, unit_class, start, [float(point["value"]) * factor])
+            label = name if name.isupper() else name[0].lower() + name[1:]
+            _add(result, f"{DOMAIN}:lichaam_{_slug(metric_type)}", f"Lichaam {label}", unit, unit_class, start, [float(point["value"]) * factor])
     return _finish(result)
 
 
@@ -174,12 +182,15 @@ def current_values(bio_age, activity_level, imbalances):
         "bio_leeftijd_flexibiliteit": _sensor("Bio-leeftijd flexibiliteit", _value((bio.get("flexibilityDetails") or {}).get("flexibilityAge")), "jaar", age),
     }
     level = activity_level or {}
+    points, goal = level.get("points"), level.get("goal")
+    progress = round(points / goal * 100, 1) if isinstance(points, (int, float)) and goal else None
     values.update({
-        "activiteit_punten": _sensor("Activiteitspunten", level.get("points"), "punten", "mdi:star-circle"),
-        "activiteit_doel": _sensor("Activiteitsdoel", level.get("goal"), "punten", "mdi:flag-checkered"),
-        "activiteit_behouden": _sensor("Punten om niveau te behouden", level.get("maintainPoints"), "punten", "mdi:shield-star"),
-        "activiteit_dagen_over": _sensor("Dagen over in periode", level.get("daysLeft"), "dagen", "mdi:calendar-clock"),
-        "activiteit_niveau": _sensor("Activiteitsniveau", level.get("level"), None, "mdi:trophy"),
+        "activiteit_punten": _sensor("Activiteit punten", level.get("points"), "punten", "mdi:star-circle"),
+        "activiteit_doel": _sensor("Activiteit doel", level.get("goal"), "punten", "mdi:flag-checkered"),
+        "activiteit_voortgang": _sensor("Activiteit voortgang", progress, "%", "mdi:progress-check"),
+        "activiteit_behouden": _sensor("Activiteit punten om niveau te behouden", level.get("maintainPoints"), "punten", "mdi:shield-star"),
+        "activiteit_dagen_over": _sensor("Activiteit dagen over in periode", level.get("daysLeft"), "dagen", "mdi:calendar-clock"),
+        "activiteit_niveau": _sensor("Activiteit niveau", level.get("level"), None, "mdi:trophy"),
     })
     for item in (imbalances or {}).get("muscleImbalances") or []:
         size = item.get("rangeSize") or 10000.0
@@ -218,7 +229,7 @@ def latest_values(statistics):
         object_id = statistic_id.split(":", 1)[1]
         use_max = object_id.endswith("_gewicht") or object_id.startswith("kracht_")
         latest[object_id] = {
-            "name": stat["name"].removeprefix("EGYM "),
+            "name": stat["name"],
             "value": row["max"] if use_max else row["mean"],
             "unit": stat["unit"],
             "time": start.isoformat(),

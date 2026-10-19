@@ -15,12 +15,18 @@ It reads your EGYM account and keeps the history in Home Assistant's long-term s
 | Strength test per machine | `egym:<name>_kracht_1002` | Strength value from the machine's strength test (kg) |
 | Body composition | `egym:<name>_lichaam_weight_kg` | Weight, BMI, body fat, muscle mass, visceral fat and more from the Fitness Hub |
 
-**Sensors**, all under one device `EGYM <name>`:
+**Sensors**, all under one device `EGYM <name>`. Their names start with a group word, so they sort per group:
 
-- Current values: bio age (total, muscles, upper body, core, lower body, metabolic, cardio, flexibility), activity points and level, and muscle balance per muscle pair with its optimal range.
-- Last measured value per exercise (weight of the heaviest set and total repetitions), per strength-test machine and per body metric, with the time in the attribute `gemeten_op`. New exercises get a sensor after the next sync. Segment and height values start disabled; enable them in the entity settings if you want them.
+| Group | Sensors |
+| --- | --- |
+| Activiteit | points, goal, progress towards the goal (%), points to keep the level, days left, level |
+| Bio-leeftijd | total, muscles, upper body, core, lower body, metabolic, cardio, flexibility |
+| Krachttest | last strength test per machine |
+| Lichaam | last body composition values from the Fitness Hub (segment values and height start disabled) |
+| Spierbalans | balance per muscle pair, with the optimal range as attributes |
+| Training | per exercise: weight of the heaviest set and total repetitions of the last session |
 
-The sensors show the latest value; the progress over time is in the statistics above. These last-value sensors have no state class on purpose, so Home Assistant does not build a second history next to the statistics.
+Krachttest, Lichaam and Training sensors show the last measured value, with its time in the attribute `gemeten_op`; their history is in the statistics above, so these sensors have no state class on purpose. New exercises get a sensor after the next sync.
 
 Data is fetched every 6 hours and when Home Assistant starts. The first sync fetches everything since 2019.
 
@@ -70,6 +76,10 @@ entities:
   - egym:daan_kracht_1002   # replace daan with your name
   - egym:daan_kracht_998
 ```
+
+Use `chart_type: line`: a bar chart stacks the machines on top of each other, which adds up weights that do not belong together.
+
+A Krachttest statistic only gets a point when the machine runs a strength test, which EGYM does now and then, not every session. The Training statistics get a point every session.
 
 Strength tests and workouts use different activity ids for the same machine; the statistic names show which machine is which.
 

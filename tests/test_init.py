@@ -46,22 +46,24 @@ async def test_setup_imports_statistics_and_sensors(recorder_mock, enable_custom
 
         ids = {i["statistic_id"]: i for i in await get_instance(hass).async_add_executor_job(list_statistic_ids, hass)}
         assert "egym:marcel_kracht_1002" in ids
-        assert ids["egym:marcel_kracht_1002"]["name"] == "Marcel EGYM Leg Press kracht"
+        assert ids["egym:marcel_kracht_1002"]["name"] == "Marcel Krachttest Leg Press"
         stats = await _statistics(hass, ["egym:marcel_oefening_581_gewicht", "egym:marcel_lichaam_weight_kg"])
         assert [r["max"] for r in stats["egym:marcel_oefening_581_gewicht"]] == [50.0, 53.0]
         assert [r["max"] for r in stats["egym:marcel_lichaam_weight_kg"]] == [81.0, 80.0]
 
         assert hass.states.get("sensor.egym_marcel_bio_leeftijd").state == "40"
         assert hass.states.get("sensor.egym_marcel_bio_leeftijd_cardio").state == "unknown"
-        assert hass.states.get("sensor.egym_marcel_activiteitsniveau").state == "silver"
+        assert hass.states.get("sensor.egym_marcel_activiteit_niveau").state == "silver"
+        progress = hass.states.get("sensor.egym_marcel_activiteit_voortgang")
+        assert progress.state == "35.7" and progress.attributes["state_class"] == "measurement"
         assert hass.states.get("sensor.egym_marcel_spierbalans_quadriceps_hamstring").attributes["optimaal_tot"] == 60.0
 
         # Last measured values as sensors, with their date
-        leg_press = hass.states.get("sensor.egym_marcel_leg_press_gewicht")
+        leg_press = hass.states.get("sensor.egym_marcel_training_leg_press_gewicht")
         assert leg_press.state == "53.0" and leg_press.attributes["icon"] == "mdi:weight-kilogram"
         assert "state_class" not in leg_press.attributes
-        assert hass.states.get("sensor.egym_marcel_leg_press_kracht").attributes["gemeten_op"].startswith("2026-10-08")
-        assert hass.states.get("sensor.egym_marcel_lichaamsgewicht").state == "80.0"
+        assert hass.states.get("sensor.egym_marcel_krachttest_leg_press").attributes["gemeten_op"].startswith("2026-10-08")
+        assert hass.states.get("sensor.egym_marcel_lichaam_gewicht").state == "80.0"
 
         # Later syncs only go back a few days, and re-importing does not duplicate rows
         assert calls[0] == datetime.date(2019, 1, 1)
@@ -160,9 +162,9 @@ async def test_latest_survives_short_sync_and_new_exercise_appears(recorder_mock
     with patch(FETCH, return_value=later):
         await entry.runtime_data.async_refresh()
         await hass.async_block_till_done()
-    assert hass.states.get("sensor.egym_marcel_seated_row_gewicht").state == "30.0"
-    assert hass.states.get("sensor.egym_marcel_leg_press_gewicht").state == "53.0"
-    assert hass.states.get("sensor.egym_marcel_leg_press_kracht").state == "105.0"
+    assert hass.states.get("sensor.egym_marcel_training_seated_row_gewicht").state == "30.0"
+    assert hass.states.get("sensor.egym_marcel_training_leg_press_gewicht").state == "53.0"
+    assert hass.states.get("sensor.egym_marcel_krachttest_leg_press").state == "105.0"
 
 
 async def test_ships_its_own_icon(enable_custom_integrations, hass):
@@ -174,10 +176,27 @@ async def test_ships_its_own_icon(enable_custom_integrations, hass):
 async def test_store_from_older_version_triggers_full_sync(recorder_mock, enable_custom_integrations, hass, hass_storage):
     entry = _entry()
     entry.add_to_hass(hass)
-    hass_storage[f"egym.{entry.entry_id}.v2"] = {"version": 1, "key": f"egym.{entry.entry_id}.v2", "data": {"last_sync": "2026-10-19"}}
+    hass_storage[f"egym.{entry.entry_id}.v2"] = {"version": 1, "key": f"egym.{entry.entry_id}.v2", "data": {"last_sync": "2026-10-19", "latest": {}}}
     starts = []
     with patch(FETCH, side_effect=lambda e, p, b, start, end: starts.append(start) or all_data()):
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
     assert starts == [datetime.date(2019, 1, 1)]
-    assert hass.states.get("sensor.egym_marcel_lichaamsgewicht").state == "80.0"
+    assert hass.states.get("sensor.egym_marcel_lichaam_gewicht").state == "80.0"
+
+
+async def test_sensors_sort_per_group(recorder_mock, enable_custom_integrations, hass):
+    from homeassistant.helpers import entity_registry as er
+    entry = _entry()
+    entry.add_to_hass(hass)
+    with patch(FETCH, return_value=all_data()):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+    names = sorted(hass.states.get(e.entity_id).attributes["friendly_name"].removeprefix("EGYM Marcel ")
+                   for e in er.async_entries_for_config_entry(er.async_get(hass), entry.entry_id)
+                   if hass.states.get(e.entity_id))
+    groups = [n.split()[0] for n in names]
+    # every group word appears as one consecutive block
+    blocks = [g for i, g in enumerate(groups) if i == 0 or groups[i - 1] != g]
+    assert len(blocks) == len(set(blocks)), names
+    assert set(blocks) == {"Activiteit", "Bio-leeftijd", "Krachttest", "Lichaam", "Spierbalans", "Training"}, names

@@ -15,7 +15,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util, slugify
 
-from .const import CONF_BASE_URL, DOMAIN, HISTORY_START, RESYNC_MARGIN, STORAGE_VERSION, SYNC_INTERVAL
+from .const import CONF_BASE_URL, DOMAIN, HISTORY_START, RESYNC_MARGIN, STORAGE_VERSION, STORE_SCHEMA, SYNC_INTERVAL
 from .convert import (
     body_metric_types,
     body_metrics_to_statistics,
@@ -71,8 +71,9 @@ class EgymCoordinator(DataUpdateCoordinator):
 
     async def async_load(self) -> None:
         data = await self.store.async_load() or {}
-        # A store from before 0.4 has no "latest": sync everything once so all last-value sensors get filled
-        if data.get("last_sync") and "latest" in data:
+        # A store from an older version syncs everything once, so all sensors get filled
+        # and every statistic gets the current names
+        if data.get("last_sync") and data.get("schema") == STORE_SCHEMA:
             self.last_sync = datetime.date.fromisoformat(data["last_sync"])
         self.latest = data.get("latest") or {}
 
@@ -115,7 +116,7 @@ class EgymCoordinator(DataUpdateCoordinator):
             if object_id not in self.latest or item["time"] >= self.latest[object_id]["time"]:
                 self.latest[object_id] = item
         self.last_sync = today
-        await self.store.async_save({"last_sync": today.isoformat(), "latest": self.latest})
+        await self.store.async_save({"schema": STORE_SCHEMA, "last_sync": today.isoformat(), "latest": self.latest})
         _LOGGER.debug("EGYM sync %s..%s: %d statistics", start, today, len(statistics))
         return {
             **current_values(data["bio_age"], data["activity_level"], data["muscle_imbalances"]),

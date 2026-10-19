@@ -17,3 +17,6 @@ HISTORY_START = datetime.date(2019, 1, 1)
 RESYNC_MARGIN = datetime.timedelta(days=3)
 
 STORAGE_VERSION = 1
+
+# Bump when stored data or statistic names change; an older store triggers one full sync.
+STORE_SCHEMA = 2

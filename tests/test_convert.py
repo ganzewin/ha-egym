@@ -62,7 +62,10 @@ def test_latest_values_and_sensors():
     }
     latest = latest_values(stats)
     assert latest["oefening_581_gewicht"]["value"] == 53.0  # heaviest set of the last session
-    assert latest["oefening_581_gewicht"]["name"] == "Leg Press gewicht"
+    assert latest["oefening_581_gewicht"]["name"] == "Training Leg Press gewicht"
+    assert latest["kracht_1002"]["name"] == "Krachttest Leg Press"
+    assert latest["lichaam_weight_kg"]["name"] == "Lichaam gewicht"
+    assert latest["lichaam_basal_metabolic_rate_kj"]["name"] == "Lichaam basaal metabolisme"
     assert latest["oefening_581_herhalingen"]["value"] == 40
     assert latest["kracht_1002"]["value"] == 105
     assert latest["lichaam_weight_kg"]["value"] == 80.0
