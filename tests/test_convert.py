@@ -11,6 +11,8 @@ from custom_components.egym.convert import (
     latest_sensors,
     latest_values,
     merge_history,
+    ordered_name,
+    parse_order,
     progress_sensors,
     sessions_per_week,
     strength_index,
@@ -190,3 +192,23 @@ def test_intensity_uses_the_test_in_effect_at_each_session():
 
 def test_band_position_is_clipped():
     assert (band_position(30, 40, 65), band_position(52.5, 40, 65), band_position(70, 40, 65)) == (0, 50, 100)
+
+
+GYM_ORDER = "1\tLeg Press\n2\tSeated Row\n3\tLeg Curl\n4\tBack Extension\n5\tLat Pulldown\n6\tAbdominal Crunch\n7\tLeg Extension\n8\tChest Press"
+
+
+def test_parse_order_accepts_numbers_tabs_commas_and_prefix():
+    assert parse_order(GYM_ORDER)["chest press"] == 8
+    assert parse_order("EGYM Leg Press, 2. Seated Row;Leg Curl") == {"leg press": 1, "seated row": 2, "leg curl": 3}
+    assert parse_order("") == {}
+
+
+def test_ordered_names():
+    positions = parse_order(GYM_ORDER)
+    assert ordered_name("Training Leg Press gewicht", positions) == "Training 1 Leg Press gewicht"
+    assert ordered_name("Krachttest Chest Press", positions) == "Krachttest 8 Chest Press"
+    assert ordered_name("Training Seated Row intensiteit", positions) == "Training 2 Seated Row intensiteit"
+    for unchanged in ("Training volume totaal", "Krachttest index", "Training sessies per week", "Training Treadmill gewicht"):
+        assert ordered_name(unchanged, positions) == unchanged
+    ten = parse_order(",".join(f"M{i}" for i in range(1, 11)))
+    assert ordered_name("Krachttest M3", ten) == "Krachttest 03 M3"  # same width, so 10 sorts after 9

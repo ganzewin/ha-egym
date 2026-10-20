@@ -5,6 +5,8 @@ import datetime
 DOMAIN = "egym"
 
 CONF_BASE_URL = "base_url"
+# Order of the machines in the gym, one per line or comma separated; adds a number to their names
+CONF_ORDER = "volgorde"
 
 # How often EGYM is checked for new data.
 SYNC_INTERVAL = datetime.timedelta(hours=6)

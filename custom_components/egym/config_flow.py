@@ -3,10 +3,12 @@
 import probatio as vol
 import requests
 
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlowWithReload
 from homeassistant.const import CONF_EMAIL, CONF_NAME, CONF_PASSWORD
+from homeassistant.core import callback
+from homeassistant.helpers.selector import TextSelector, TextSelectorConfig
 
-from .const import CONF_BASE_URL, DOMAIN
+from .const import CONF_BASE_URL, CONF_ORDER, DOMAIN
 from .egym_api import Api, AuthenticationError, DiscoveryError, EgymError
 
 SCHEMA = vol.Schema(
@@ -15,7 +17,12 @@ SCHEMA = vol.Schema(
         vol.Required(CONF_PASSWORD): str,
         vol.Optional(CONF_NAME, default=""): str,
         vol.Optional(CONF_BASE_URL, default=""): str,
+        vol.Optional(CONF_ORDER, default=""): TextSelector(TextSelectorConfig(multiline=True)),
     }
+)
+
+OPTIONS_SCHEMA = vol.Schema(
+    {vol.Optional(CONF_ORDER, default=""): TextSelector(TextSelectorConfig(multiline=True))}
 )
 
 
@@ -28,6 +35,11 @@ def _check_login(email, password, base_url):
 
 class EgymConfigFlow(ConfigFlow, domain=DOMAIN):
     VERSION = 1
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> "EgymOptionsFlow":
+        return EgymOptionsFlow()
 
     async def async_step_user(self, user_input=None) -> ConfigFlowResult:
         errors = {}
@@ -56,10 +68,23 @@ class EgymConfigFlow(ConfigFlow, domain=DOMAIN):
                         CONF_NAME: name,
                         CONF_BASE_URL: base_url,
                     },
+                    options={CONF_ORDER: user_input.get(CONF_ORDER, "").strip()},
                 )
         return self.async_show_form(
             step_id="user",
             data_schema=self.add_suggested_values_to_schema(SCHEMA, user_input),
             errors=errors,
             description_placeholders={"example_url": "https://yourgym.netpulse.com"},
+        )
+
+
+class EgymOptionsFlow(OptionsFlowWithReload):
+    """Change the machine order; the entry reloads so names follow."""
+
+    async def async_step_init(self, user_input=None) -> ConfigFlowResult:
+        if user_input is not None:
+            return self.async_create_entry(data={CONF_ORDER: user_input.get(CONF_ORDER, "").strip()})
+        return self.async_show_form(
+            step_id="init",
+            data_schema=self.add_suggested_values_to_schema(OPTIONS_SCHEMA, self.config_entry.options),
         )

@@ -458,3 +458,54 @@ def latest_sensors(history, band=(40, 65)):
             item["name"], item["value"], item["unit"], icon, attrs, measurement=False, enabled=enabled,
         )
     return sensors
+
+
+_ORDERED = re.compile(r"^(Training|Krachttest) (.+?)(?: (gewicht|herhalingen|volume|intensiteit))?$")
+
+
+def parse_order(text):
+    """'1 Leg Press, 2 Seated Row' or one per line -> {"leg press": 1, "seated row": 2}.
+
+    Leading numbers, dots and an 'EGYM ' prefix are ignored; the position in the list counts.
+    """
+    names = [
+        re.sub(r"^\d+[.)]?\s*", "", part.strip()).removeprefix("EGYM ").strip()
+        for part in re.split(r"[,\n;]", text or "")
+    ]
+    return {name.lower(): position for position, name in enumerate((n for n in names if n), start=1)}
+
+
+def ordered_machine(machine, positions):
+    """'Leg Press' -> '1 Leg Press' when it is in the order, padded to the same width."""
+    position = positions.get(machine.lower())
+    if position is None:
+        return machine
+    return f"{position:0{len(str(len(positions)))}d} {machine}"
+
+
+def ordered_name(name, positions):
+    """Put the machine number in a statistic or sensor name: 'Training Leg Press gewicht' -> 'Training 1 Leg Press gewicht'."""
+    match = _ORDERED.match(name)
+    if not positions or not match or match.group(2).lower() not in positions:
+        return name
+    group, machine, suffix = match.groups()
+    return " ".join(part for part in (group, ordered_machine(machine, positions), suffix) if part)
+
+
+def apply_order(sensors, statistics, positions):
+    """Numbered names for sensors and statistics, and per-machine attributes sorted in gym order."""
+    if not positions:
+        return
+    for stat in statistics.values():
+        stat["name"] = ordered_name(stat["name"], positions)
+    for sensor in sensors.values():
+        sensor["name"] = ordered_name(sensor["name"], positions)
+        attrs = sensor.get("attrs") or {}
+        for key in ("per_toestel", "groei_per_toestel_pct"):
+            if isinstance(attrs.get(key), dict):
+                renamed = {ordered_machine(machine, positions): value for machine, value in attrs[key].items()}
+                attrs[key] = dict(sorted(renamed.items()))
+        number = re.match(r"^(?:Training|Krachttest) (\d+) ", sensor["name"])
+        if number:
+            attrs["volgnummer"] = int(number.group(1))
+            sensor["attrs"] = attrs

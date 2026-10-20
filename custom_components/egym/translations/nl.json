@@ -8,7 +8,8 @@
           "email": "E-mailadres",
           "password": "Wachtwoord",
           "name": "Naam (voor grafieken en sensoren, bijv. Marcel)",
-          "base_url": "Sportschooladres"
+          "base_url": "Sportschooladres",
+          "volgorde": "Volgorde van de toestellen in je sportschool (optioneel), één per regel"
         }
       }
     },
@@ -19,6 +20,17 @@
     },
     "abort": {
       "already_configured": "Dit account is al ingesteld."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "EGYM",
+        "description": "Zet de toestellen in de volgorde van je sportschool, één per regel, bijvoorbeeld Leg Press, Seated Row, Leg Curl. Ze krijgen dan een nummer in hun naam (Training 1 Leg Press gewicht), zodat lijsten en grafieken in die volgorde staan. Laat leeg voor geen nummers. De entity-ID's krijgen het nummer alleen als de volgorde al bij het toevoegen is ingevuld.",
+        "data": {
+          "volgorde": "Volgorde van de toestellen in je sportschool (optioneel), één per regel"
+        }
+      }
     }
   }
 }

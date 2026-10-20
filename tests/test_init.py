@@ -126,9 +126,11 @@ async def test_config_flow(recorder_mock, enable_custom_integrations, hass):
     with patch("custom_components.egym.config_flow._check_login", return_value="https://gym.netpulse.com"), \
          patch("custom_components.egym.async_setup_entry", return_value=True):
         result = await hass.config_entries.flow.async_configure(
-            result["flow_id"], {"email": "marcel@example.com", "password": "x", "base_url": "https://gym.netpulse.com"}
+            result["flow_id"], {"email": "marcel@example.com", "password": "x", "base_url": "https://gym.netpulse.com",
+                                "volgorde": "Leg Press\nSeated Row\n"}
         )
     assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["options"] == {"volgorde": "Leg Press\nSeated Row"}
     assert result["title"] == "marcel"
     assert result["data"]["name"] == "marcel"
 
@@ -216,3 +218,44 @@ async def test_sensors_sort_per_group(recorder_mock, enable_custom_integrations,
     blocks = [g for i, g in enumerate(groups) if i == 0 or groups[i - 1] != g]
     assert len(blocks) == len(set(blocks)), names
     assert set(blocks) == {"Activiteit", "Bio-leeftijd", "Krachttest", "Lichaam", "Spierbalans", "Training"}, names
+
+
+async def test_machine_order_numbers_names_and_entity_ids(recorder_mock, enable_custom_integrations, hass):
+    entry = MockConfigEntry(
+        domain="egym", unique_id="marcel@example.com",
+        data={"email": "marcel@example.com", "password": "x", "name": "Marcel", "base_url": "https://gym.netpulse.com"},
+        options={"volgorde": "1 Leg Press\n2 Seated Row\n8 Chest Press"},
+    )
+    entry.add_to_hass(hass)
+    with patch(FETCH, return_value=all_data()):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        await async_wait_recording_done(hass)
+    leg_press = hass.states.get("sensor.egym_marcel_training_1_leg_press_gewicht")
+    assert leg_press is not None and leg_press.attributes["volgnummer"] == 1
+    assert hass.states.get("sensor.egym_marcel_krachttest_1_leg_press").state == "105.0"
+    # Chest Press is third in this list
+    assert hass.states.get("sensor.egym_marcel_training_3_chest_press_gewicht") is not None
+    ids = {i["statistic_id"]: i for i in await get_instance(hass).async_add_executor_job(list_statistic_ids, hass)}
+    # Statistic ids stay the same, so charts keep working when the order changes; the name gets the number
+    assert ids["egym:marcel_kracht_1002"]["name"] == "Marcel Krachttest 1 Leg Press"
+    assert list(hass.states.get("sensor.egym_marcel_krachttest_index").attributes["groei_per_toestel_pct"]) == ["1 Leg Press"]
+
+
+async def test_options_flow_changes_order_and_reloads(recorder_mock, enable_custom_integrations, hass):
+    entry = _entry()
+    entry.add_to_hass(hass)
+    with patch(FETCH, return_value=all_data()):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        assert hass.states.get("sensor.egym_marcel_training_leg_press_gewicht").attributes["friendly_name"] == \
+            "EGYM Marcel Training Leg Press gewicht"
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        assert result["type"] is FlowResultType.FORM
+        result = await hass.config_entries.options.async_configure(result["flow_id"], {"volgorde": "Leg Press"})
+        assert result["type"] is FlowResultType.CREATE_ENTRY
+        await hass.async_block_till_done()
+    assert entry.options == {"volgorde": "Leg Press"}
+    # Existing entity keeps its id, its name gets the number
+    state = hass.states.get("sensor.egym_marcel_training_leg_press_gewicht")
+    assert state.attributes["friendly_name"] == "EGYM Marcel Training 1 Leg Press gewicht"

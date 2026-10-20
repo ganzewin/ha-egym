@@ -67,6 +67,9 @@ Settings → Devices & services → Add integration → **EGYM**.
 - **Email / password**: your EGYM Fitness app login.
 - **Name**: the person this account belongs to, for example `Daan`. Add the integration once per person to track several people in one Home Assistant.
 - **Gym address**: leave empty to look it up from your email address. If that fails, enter your gym's Netpulse address, for example `https://yourgym.netpulse.com`.
+- **Machine order** (optional): the machines in the order of your gym's circuit, one per line, for example `Leg Press`, `Seated Row`, `Leg Curl`. Numbers in front and an `EGYM ` prefix are ignored, so a list copied from elsewhere works. The machines then get their number in their names: `Training 1 Leg Press gewicht`, `Krachttest 8 Chest Press`, so sensor lists, chart pickers and the attributes `per_toestel` and `groei_per_toestel_pct` follow the gym order. Training and Krachttest gewicht sensors get the attribute `volgnummer`.
+
+The order can be changed later under Settings → Devices & services → EGYM → Configure. Names follow right away; entity IDs are only set when an entity is created, so they contain the number only when the order was filled in when adding the integration. Statistic ids never contain the number, so charts keep working when the order changes.
 
 ### The name in ids and entities
 

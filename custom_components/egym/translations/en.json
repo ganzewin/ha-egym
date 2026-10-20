@@ -8,7 +8,8 @@
           "email": "Email",
           "password": "Password",
           "name": "Name (for charts and sensors, e.g. Marcel)",
-          "base_url": "Gym address"
+          "base_url": "Gym address",
+          "volgorde": "Order of the machines in your gym (optional), one per line"
         }
       }
     },
@@ -19,6 +20,17 @@
     },
     "abort": {
       "already_configured": "This account is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "EGYM",
+        "description": "Put the machines in the order of your gym, one per line, for example Leg Press, Seated Row, Leg Curl. They get a number in their names (Training 1 Leg Press gewicht), so lists and charts follow that order. Leave empty for no numbers. Entity IDs only get the number when the order is filled in when adding the integration.",
+        "data": {
+          "volgorde": "Order of the machines in your gym (optional), one per line"
+        }
+      }
     }
   }
 }
