@@ -123,6 +123,6 @@ class EgymCoordinator(DataUpdateCoordinator):
         _LOGGER.debug("EGYM sync %s..%s: %d statistics", start, today, len(statistics))
         return {
             **current_values(data["bio_age"], data["activity_level"], data["muscle_imbalances"]),
-            **latest_sensors(self.history),
+            **latest_sensors(self.history, TRAINING_BAND),
             **progress_sensors(self.history, dt_util.now(), TRAINING_BAND),
         }

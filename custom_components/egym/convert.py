@@ -407,7 +407,7 @@ def progress_sensors(history, now, band=(40, 65)):
     return sensors
 
 
-def latest_sensors(history):
+def latest_sensors(history, band=(40, 65)):
     """Sensors with the last value per exercise, machine and body metric; only height starts disabled.
 
     Training sensors also carry their whole history as the attribute "sessies", and the gewicht sensor
@@ -433,6 +433,7 @@ def latest_sensors(history):
                 if machine_intensity:
                     # Training weight as % of the strength test in effect: the knob a member can turn
                     attrs["pct_van_krachttest"] = machine_intensity[1][-1][1]
+                    attrs["positie_in_band_pct"] = band_position(machine_intensity[1][-1][1], *band)
                     attrs["intensiteit"] = [[t, v] for t, v in machine_intensity[1]]
         elif object_id == "training_volume_totaal":
             icon = "mdi:weight-lifter"

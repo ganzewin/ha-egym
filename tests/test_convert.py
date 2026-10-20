@@ -149,6 +149,7 @@ def test_krachttest_attributes_and_pct_of_strength():
     test = sensors["kracht_1002"]["attrs"]
     assert (test["nulmeting"], test["verandering_kg"], test["verandering_pct"], test["aantal_metingen"]) == (100.0, 5.0, 5.0, 2)
     assert sensors["oefening_581_gewicht"]["attrs"]["pct_van_krachttest"] == 50.5  # 53 / 105
+    assert sensors["oefening_581_gewicht"]["attrs"]["positie_in_band_pct"] == 42  # (50.5 - 40) / 25
     assert "pct_van_krachttest" not in sensors["oefening_333_gewicht"]["attrs"]  # no test on this machine
     assert "oefening_581_volume" not in sensors
     assert sensors["training_volume_totaal"]["value"] == 2100.0  # 20 x 52 + 20 x 53, last session
