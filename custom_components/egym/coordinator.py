@@ -15,17 +15,16 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util, slugify
 
-from .const import CONF_BASE_URL, DOMAIN, HISTORY_START, RESYNC_MARGIN, STORAGE_VERSION, STORE_SCHEMA, SYNC_INTERVAL
+from .const import CONF_BASE_URL, DOMAIN, HISTORY_START, RESYNC_MARGIN, STORAGE_VERSION, STORE_SCHEMA, SYNC_INTERVAL, TRAINING_BAND
 from .convert import (
     body_metric_types,
     body_metrics_to_statistics,
     current_values,
     history_values,
-    index_to_statistics,
+    derived_statistics,
     latest_sensors,
     merge_history,
     progress_sensors,
-    strength_index,
     strength_to_statistics,
     workouts_to_statistics,
 )
@@ -101,8 +100,8 @@ class EgymCoordinator(DataUpdateCoordinator):
         }
         # Later syncs only see recent days, so the values per measurement are kept in the store
         merge_history(self.history, history_values(statistics))
-        # The index needs every strength test since the first one, so it comes from the stored history
-        statistics.update(index_to_statistics(strength_index(self.history)))
+        # Index and intensity need every strength test since the first one, so they come from the stored history
+        statistics.update(derived_statistics(self.history))
         for statistic_id, stat in statistics.items():
             # egym:kracht_1002 -> egym:marcel_kracht_1002, so several people can share one Home Assistant
             statistic_id = statistic_id.replace(f"{DOMAIN}:", f"{DOMAIN}:{self.prefix}_", 1)
@@ -125,5 +124,5 @@ class EgymCoordinator(DataUpdateCoordinator):
         return {
             **current_values(data["bio_age"], data["activity_level"], data["muscle_imbalances"]),
             **latest_sensors(self.history),
-            **progress_sensors(self.history, dt_util.now()),
+            **progress_sensors(self.history, dt_util.now(), TRAINING_BAND),
         }

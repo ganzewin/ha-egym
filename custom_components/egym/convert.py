@@ -268,9 +268,8 @@ def _series(item):
 def strength_index(history):
     """Krachttest index per strength-test moment: [(iso time, index)], 100 = first test.
 
-    At each moment: sum of the last test per machine divided by the sum of the first tests of the same
-    machines, times 100. A machine that is tested for the first time later joins with its own first test
-    as baseline, so it does not make the index jump.
+    At each moment: the average over the machines of last test / first test, times 100. Every machine
+    weighs the same, whatever its weight. A machine tested for the first time later joins at 100.
     """
     series = {
         object_id: sorted(item["points"].items())
@@ -278,22 +277,75 @@ def strength_index(history):
     }
     result = []
     for time in sorted({t for points in series.values() for t, _ in points}):
-        current = baseline = 0.0
+        ratios = []
         for points in series.values():
             past = [value for t, value in points if t <= time]
-            if past:
-                current += past[-1]
-                baseline += points[0][1]
-        if baseline:
-            result.append((time, round(current / baseline * 100, 1)))
+            if past and points[0][1]:
+                ratios.append(past[-1] / points[0][1])
+        if ratios:
+            result.append((time, round(sum(ratios) / len(ratios) * 100, 1)))
     return result
 
 
-def index_to_statistics(index):
-    """The Krachttest index as a statistic, one row per strength-test hour."""
+def _strength_by_machine(history):
+    return {
+        item["name"].removeprefix("Krachttest "): sorted(item["points"].items())
+        for object_id, item in history.items() if object_id.startswith("kracht_") and item["points"]
+    }
+
+
+def intensity(history):
+    """Training weight as % of the strength test in effect at each session: {oefening_X: (name, [(time, pct)])}.
+
+    The weight is the heaviest set of the session; the test in effect is the last one at or before the
+    session hour (EGYM runs the test at the start of a session, in the same hour). Sessions before the
+    first test of a machine are left out.
+    """
+    tests = _strength_by_machine(history)
     result = {}
-    for time, value in index:
+    for object_id, item in history.items():
+        if not (object_id.startswith("oefening_") and object_id.endswith("_gewicht")):
+            continue
+        machine = item["name"].removeprefix("Training ").removesuffix(" gewicht")
+        machine_tests = tests.get(machine)
+        if not machine_tests:
+            continue
+        points = []
+        for time, weight in sorted(item["points"].items()):
+            in_effect = [value for t, value in machine_tests if t <= time]
+            if in_effect and in_effect[-1]:
+                points.append((time, round(weight / in_effect[-1] * 100, 1)))
+        if points:
+            result[object_id.removesuffix("_gewicht")] = (machine, points)
+    return result
+
+
+def session_intensity(per_machine):
+    """Average intensity over the machines trained per session: [(time, pct)]."""
+    by_time = {}
+    for _machine, points in per_machine.values():
+        for time, pct in points:
+            by_time.setdefault(time, []).append(pct)
+    return [(time, round(sum(v) / len(v), 1)) for time, v in sorted(by_time.items())]
+
+
+def band_position(pct, low, high):
+    """Where pct lies in the training band: 0 at the bottom, 100 at the top, clipped."""
+    return round(min(max((pct - low) / (high - low) * 100, 0), 100))
+
+
+def derived_statistics(history):
+    """Statistics computed from the stored history: Krachttest index and intensity per machine and session."""
+    result = {}
+    for time, value in strength_index(history):
         _add(result, f"{DOMAIN}:krachttest_index", "Krachttest index", "%", None, datetime.datetime.fromisoformat(time), [value])
+    per_machine = intensity(history)
+    for key, (machine, points) in per_machine.items():
+        for time, pct in points:
+            _add(result, f"{DOMAIN}:{key}_intensiteit", f"Training {machine} intensiteit", "%", None,
+                 datetime.datetime.fromisoformat(time), [pct])
+    for time, pct in session_intensity(per_machine):
+        _add(result, f"{DOMAIN}:training_intensiteit", "Training intensiteit", "%", None, datetime.datetime.fromisoformat(time), [pct])
     return _finish(result)
 
 
@@ -314,20 +366,37 @@ def sessions_per_week(history, now):
     return this_week, round(last_28 / 4, 1)
 
 
-def progress_sensors(history, now):
-    """Sensors for the Krachttest index and training frequency."""
+def progress_sensors(history, now, band=(40, 65)):
+    """Sensors for the Krachttest index, training intensity and training frequency."""
     sensors = {}
     index = strength_index(history)
     if index:
-        tests = [item for object_id, item in history.items() if object_id.startswith("kracht_") and item["points"]]
+        growth = {machine: round((points[-1][1] / points[0][1] - 1) * 100, 1)
+                  for machine, points in _strength_by_machine(history).items() if points[0][1]}
         sensors["krachttest_index"] = _sensor(
             "Krachttest index", index[-1][1], "%", "mdi:chart-line-variant",
             {
                 "gemeten_op": index[-1][0],
-                "nulmeting_kg": round(sum(sorted(i["points"].items())[0][1] for i in tests), 1),
-                "huidig_kg": round(sum(sorted(i["points"].items())[-1][1] for i in tests), 1),
-                "toestellen": len(tests),
+                "groei_per_toestel_pct": dict(sorted(growth.items())),
                 "verloop": [[time, value] for time, value in index],
+            },
+            measurement=False,
+        )
+    per_machine = intensity(history)
+    sessions = session_intensity(per_machine)
+    if sessions:
+        low, high = band
+        time, pct = sessions[-1]
+        latest = {machine: points[-1][1] for machine, points in per_machine.values() if points[-1][0] == time}
+        sensors["training_intensiteit"] = _sensor(
+            "Training intensiteit", pct, "%", "mdi:speedometer",
+            {
+                "gemeten_op": time,
+                "positie_in_band_pct": band_position(pct, low, high),
+                "band_ondergrens": low,
+                "band_bovengrens": high,
+                "per_toestel": dict(sorted(latest.items())),
+                "verloop": [[t, v] for t, v in sessions],
             },
             measurement=False,
         )
@@ -348,6 +417,7 @@ def latest_sensors(history):
         item["name"].removeprefix("Krachttest "): item
         for object_id, item in history.items() if object_id.startswith("kracht_")
     }
+    per_machine = intensity(history)
     sensors = {}
     for object_id, item in latest_values(history).items():
         if object_id.startswith("oefening_") and object_id.endswith("_volume"):
@@ -358,11 +428,12 @@ def latest_sensors(history):
             attrs["sessies"] = _series(history[object_id])
             if object_id.endswith("_gewicht"):
                 machine = item["name"].removeprefix("Training ").removesuffix(" gewicht")
-                tests = _series(strength_by_machine.get(machine))
-                attrs["krachttest"] = tests
-                if tests and tests[-1][1]:
-                    # Training weight as a share of the last strength test; EGYM sets it from that test
-                    attrs["pct_van_krachttest"] = round(item["value"] / tests[-1][1] * 100)
+                attrs["krachttest"] = _series(strength_by_machine.get(machine))
+                machine_intensity = per_machine.get(object_id.removesuffix("_gewicht"))
+                if machine_intensity:
+                    # Training weight as % of the strength test in effect: the knob a member can turn
+                    attrs["pct_van_krachttest"] = machine_intensity[1][-1][1]
+                    attrs["intensiteit"] = [[t, v] for t, v in machine_intensity[1]]
         elif object_id == "training_volume_totaal":
             icon = "mdi:weight-lifter"
             attrs["sessies"] = _series(history[object_id])

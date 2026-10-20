@@ -5,7 +5,9 @@ from custom_components.egym.convert import (
     body_metrics_to_statistics,
     current_values,
     history_values,
-    index_to_statistics,
+    band_position,
+    derived_statistics,
+    intensity,
     latest_sensors,
     latest_values,
     merge_history,
@@ -120,20 +122,20 @@ def _history_with_tests(tests):
     }
 
 
-def test_strength_index_uses_first_test_per_machine_as_baseline():
+def test_strength_index_is_average_growth_per_machine():
     history = _history_with_tests({
         1: [("2026-10-01T08:00:00+00:00", 100.0), ("2026-10-19T13:00:00+00:00", 120.0)],
-        2: [("2026-10-01T08:00:00+00:00", 50.0), ("2026-10-19T13:00:00+00:00", 60.0)],
-        # Tested for the first time later: joins at 100% of its own baseline, no jump
+        2: [("2026-10-01T08:00:00+00:00", 50.0), ("2026-10-19T13:00:00+00:00", 65.0)],
+        # Tested for the first time later: joins at 100% of its own baseline
         3: [("2026-11-05T09:00:00+00:00", 40.0)],
     })
     assert strength_index(history) == [
         ("2026-10-01T08:00:00+00:00", 100.0),
-        ("2026-10-19T13:00:00+00:00", 120.0),
-        ("2026-11-05T09:00:00+00:00", 115.8),  # (120 + 60 + 40) / (100 + 50 + 40)
+        ("2026-10-19T13:00:00+00:00", 125.0),  # (1.20 + 1.30) / 2; a sum would give 123.3
+        ("2026-11-05T09:00:00+00:00", 116.7),  # (1.20 + 1.30 + 1.00) / 3
     ]
-    rows = index_to_statistics(strength_index(history))["egym:krachttest_index"]["rows"]
-    assert rows[datetime.datetime(2026, 10, 19, 13, tzinfo=UTC)]["mean"] == 120.0
+    rows = derived_statistics(history)["egym:krachttest_index"]["rows"]
+    assert rows[datetime.datetime(2026, 10, 19, 13, tzinfo=UTC)]["mean"] == 125.0
 
 
 def test_strength_index_with_real_tests():
@@ -146,7 +148,7 @@ def test_krachttest_attributes_and_pct_of_strength():
     sensors = latest_sensors(history_values(stats))
     test = sensors["kracht_1002"]["attrs"]
     assert (test["nulmeting"], test["verandering_kg"], test["verandering_pct"], test["aantal_metingen"]) == (100.0, 5.0, 5.0, 2)
-    assert sensors["oefening_581_gewicht"]["attrs"]["pct_van_krachttest"] == 50  # 53 / 105
+    assert sensors["oefening_581_gewicht"]["attrs"]["pct_van_krachttest"] == 50.5  # 53 / 105
     assert "pct_van_krachttest" not in sensors["oefening_333_gewicht"]["attrs"]  # no test on this machine
     assert "oefening_581_volume" not in sensors
     assert sensors["training_volume_totaal"]["value"] == 2100.0  # 20 x 52 + 20 x 53, last session
@@ -160,3 +162,30 @@ def test_sessions_per_week():
     sensors = progress_sensors(history, now)
     assert sensors["training_sessies_deze_week"]["value"] == 1
     assert "krachttest_index" not in sensors  # no strength tests in this history
+
+
+def test_intensity_uses_the_test_in_effect_at_each_session():
+    history = {
+        "oefening_333_gewicht": {"name": "Training Chest Press gewicht", "unit": "kg", "points": {
+            "2026-10-01T08:00:00+00:00": 18.0, "2026-10-12T14:00:00+00:00": 21.0,
+            "2026-10-16T14:00:00+00:00": 23.0, "2026-10-19T13:00:00+00:00": 27.0,
+        }},
+        "kracht_998": {"name": "Krachttest Chest Press", "unit": "kg", "points": {
+            "2026-10-01T08:00:00+00:00": 45.0, "2026-10-19T13:00:00+00:00": 64.0,
+        }},
+    }
+    machine, points = intensity(history)["oefening_333"]
+    # Rises within a cycle, drops back when a new test raises the baseline
+    assert machine == "Chest Press"
+    assert [p for _, p in points] == [40.0, 46.7, 51.1, 42.2]
+    stats = derived_statistics(history)
+    assert stats["egym:oefening_333_intensiteit"]["unit"] == "%"
+    assert stats["egym:training_intensiteit"]["rows"][datetime.datetime(2026, 10, 16, 14, tzinfo=UTC)]["mean"] == 51.1
+    from zoneinfo import ZoneInfo
+    sensor = progress_sensors(history, datetime.datetime(2026, 10, 20, tzinfo=ZoneInfo("Europe/Amsterdam")))["training_intensiteit"]
+    assert sensor["value"] == 42.2 and sensor["attrs"]["positie_in_band_pct"] == 9
+    assert sensor["attrs"]["per_toestel"] == {"Chest Press": 42.2}
+
+
+def test_band_position_is_clipped():
+    assert (band_position(30, 40, 65), band_position(52.5, 40, 65), band_position(70, 40, 65)) == (0, 50, 100)

@@ -20,3 +20,7 @@ STORAGE_VERSION = 1
 
 # Bump when stored data or statistic names change; an older store triggers one full sync.
 STORE_SCHEMA = 4
+
+# Training weight as % of the strength test (1RM) for EGYM's strength endurance programme:
+# 40-65% of 1RM, about 20-30 repetitions per set.
+TRAINING_BAND = (40, 65)

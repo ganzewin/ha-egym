@@ -65,14 +65,18 @@ async def test_setup_imports_statistics_and_sensors(recorder_mock, enable_custom
         assert hass.states.get("sensor.egym_marcel_krachttest_leg_press").attributes["gemeten_op"].startswith("2026-10-08")
         assert hass.states.get("sensor.egym_marcel_lichaam_gewicht").state == "80.0"
         assert len(leg_press.attributes["sessies"]) == 2 and len(leg_press.attributes["krachttest"]) == 2
-        assert leg_press.attributes["pct_van_krachttest"] == 50
+        assert leg_press.attributes["pct_van_krachttest"] == 50.5
+        intensity = hass.states.get("sensor.egym_marcel_training_intensiteit")
+        assert intensity.state == "50.5" and intensity.attributes["positie_in_band_pct"] == 42
         index = hass.states.get("sensor.egym_marcel_krachttest_index")
         assert index.state == "105.0" and index.attributes["unit_of_measurement"] == "%"
         assert "state_class" not in index.attributes
         assert hass.states.get("sensor.egym_marcel_krachttest_leg_press").attributes["verandering_pct"] == 5.0
         assert hass.states.get("sensor.egym_marcel_training_volume_totaal").state == "2100.0"
         assert hass.states.get("sensor.egym_marcel_training_sessies_per_week") is not None
-        stats = await _statistics(hass, ["egym:marcel_krachttest_index", "egym:marcel_training_volume_totaal"])
+        stats = await _statistics(hass, ["egym:marcel_krachttest_index", "egym:marcel_training_volume_totaal",
+                                         "egym:marcel_oefening_581_intensiteit"])
+        assert [r["max"] for r in stats["egym:marcel_oefening_581_intensiteit"]] == [50.0, 50.5]
         assert [r["max"] for r in stats["egym:marcel_krachttest_index"]] == [100.0, 105.0]
         assert len(stats["egym:marcel_training_volume_totaal"]) == 2
 
