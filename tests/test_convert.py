@@ -5,9 +5,13 @@ from custom_components.egym.convert import (
     body_metrics_to_statistics,
     current_values,
     history_values,
+    index_to_statistics,
     latest_sensors,
     latest_values,
     merge_history,
+    progress_sensors,
+    sessions_per_week,
+    strength_index,
     strength_to_statistics,
     workouts_to_statistics,
 )
@@ -20,9 +24,14 @@ UTC = datetime.UTC
 def test_workouts():
     stats = workouts_to_statistics(WORKOUTS)
     assert set(stats) == {
-        "egym:oefening_581_gewicht", "egym:oefening_581_herhalingen",
-        "egym:oefening_333_gewicht", "egym:oefening_333_herhalingen",
+        "egym:oefening_581_gewicht", "egym:oefening_581_herhalingen", "egym:oefening_581_volume",
+        "egym:oefening_333_gewicht", "egym:oefening_333_herhalingen", "egym:oefening_333_volume",
+        "egym:training_volume_totaal",
     }
+    first = datetime.datetime(2026, 10, 1, 8, tzinfo=UTC)
+    # Leg Press 2 x 20 x 50 kg = 2000, Chest Press 6 x 5 + 20 x 20 = 430
+    assert stats["egym:oefening_581_volume"]["rows"][first]["mean"] == 2000.0
+    assert stats["egym:training_volume_totaal"]["rows"][first]["mean"] == 2430.0
     rows = stats["egym:oefening_581_gewicht"]["rows"]
     second = rows[datetime.datetime(2026, 10, 8, 15, tzinfo=UTC)]  # 17:05 CEST
     assert (second["min"], second["mean"], second["max"]) == (52.0, 52.5, 53.0)
@@ -101,3 +110,53 @@ def test_merge_history_keeps_old_points():
     recent = history_values(workouts_to_statistics(WORKOUTS[1:]))
     merge_history(stored, recent)
     assert len(stored["oefening_581_gewicht"]["points"]) == 2
+
+
+def _history_with_tests(tests):
+    """tests: {machine id: [(iso time, value)]}"""
+    return {
+        f"kracht_{machine}": {"name": f"Krachttest M{machine}", "unit": "kg", "points": dict(points)}
+        for machine, points in tests.items()
+    }
+
+
+def test_strength_index_uses_first_test_per_machine_as_baseline():
+    history = _history_with_tests({
+        1: [("2026-10-01T08:00:00+00:00", 100.0), ("2026-10-19T13:00:00+00:00", 120.0)],
+        2: [("2026-10-01T08:00:00+00:00", 50.0), ("2026-10-19T13:00:00+00:00", 60.0)],
+        # Tested for the first time later: joins at 100% of its own baseline, no jump
+        3: [("2026-11-05T09:00:00+00:00", 40.0)],
+    })
+    assert strength_index(history) == [
+        ("2026-10-01T08:00:00+00:00", 100.0),
+        ("2026-10-19T13:00:00+00:00", 120.0),
+        ("2026-11-05T09:00:00+00:00", 115.8),  # (120 + 60 + 40) / (100 + 50 + 40)
+    ]
+    rows = index_to_statistics(strength_index(history))["egym:krachttest_index"]["rows"]
+    assert rows[datetime.datetime(2026, 10, 19, 13, tzinfo=UTC)]["mean"] == 120.0
+
+
+def test_strength_index_with_real_tests():
+    history = history_values(strength_to_statistics(STRENGTH))
+    assert strength_index(history)[-1][1] == 105.0
+
+
+def test_krachttest_attributes_and_pct_of_strength():
+    stats = {**workouts_to_statistics(WORKOUTS), **strength_to_statistics(STRENGTH)}
+    sensors = latest_sensors(history_values(stats))
+    test = sensors["kracht_1002"]["attrs"]
+    assert (test["nulmeting"], test["verandering_kg"], test["verandering_pct"], test["aantal_metingen"]) == (100.0, 5.0, 5.0, 2)
+    assert sensors["oefening_581_gewicht"]["attrs"]["pct_van_krachttest"] == 50  # 53 / 105
+    assert "pct_van_krachttest" not in sensors["oefening_333_gewicht"]["attrs"]  # no test on this machine
+    assert "oefening_581_volume" not in sensors
+    assert sensors["training_volume_totaal"]["value"] == 2100.0  # 20 x 52 + 20 x 53, last session
+
+
+def test_sessions_per_week():
+    from zoneinfo import ZoneInfo
+    history = history_values(workouts_to_statistics(WORKOUTS))
+    now = datetime.datetime(2026, 10, 9, 12, tzinfo=ZoneInfo("Europe/Amsterdam"))  # Friday
+    assert sessions_per_week(history, now) == (1, 0.5)  # 8 Oct this week; 1 and 8 Oct in 4 weeks
+    sensors = progress_sensors(history, now)
+    assert sensors["training_sessies_deze_week"]["value"] == 1
+    assert "krachttest_index" not in sensors  # no strength tests in this history

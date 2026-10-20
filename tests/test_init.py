@@ -65,6 +65,16 @@ async def test_setup_imports_statistics_and_sensors(recorder_mock, enable_custom
         assert hass.states.get("sensor.egym_marcel_krachttest_leg_press").attributes["gemeten_op"].startswith("2026-10-08")
         assert hass.states.get("sensor.egym_marcel_lichaam_gewicht").state == "80.0"
         assert len(leg_press.attributes["sessies"]) == 2 and len(leg_press.attributes["krachttest"]) == 2
+        assert leg_press.attributes["pct_van_krachttest"] == 50
+        index = hass.states.get("sensor.egym_marcel_krachttest_index")
+        assert index.state == "105.0" and index.attributes["unit_of_measurement"] == "%"
+        assert "state_class" not in index.attributes
+        assert hass.states.get("sensor.egym_marcel_krachttest_leg_press").attributes["verandering_pct"] == 5.0
+        assert hass.states.get("sensor.egym_marcel_training_volume_totaal").state == "2100.0"
+        assert hass.states.get("sensor.egym_marcel_training_sessies_per_week") is not None
+        stats = await _statistics(hass, ["egym:marcel_krachttest_index", "egym:marcel_training_volume_totaal"])
+        assert [r["max"] for r in stats["egym:marcel_krachttest_index"]] == [100.0, 105.0]
+        assert len(stats["egym:marcel_training_volume_totaal"]) == 2
 
         # Later syncs only go back a few days, and re-importing does not duplicate rows
         assert calls[0] == datetime.date(2019, 1, 1)
@@ -178,7 +188,7 @@ async def test_ships_its_own_icon(enable_custom_integrations, hass):
 async def test_store_from_older_version_triggers_full_sync(recorder_mock, enable_custom_integrations, hass, hass_storage):
     entry = _entry()
     entry.add_to_hass(hass)
-    hass_storage[f"egym.{entry.entry_id}.v2"] = {"version": 1, "key": f"egym.{entry.entry_id}.v2", "data": {"schema": 2, "last_sync": "2026-10-19", "latest": {}}}
+    hass_storage[f"egym.{entry.entry_id}.v2"] = {"version": 1, "key": f"egym.{entry.entry_id}.v2", "data": {"schema": 3, "last_sync": "2026-10-19", "history": {}}}
     starts = []
     with patch(FETCH, side_effect=lambda e, p, b, start, end: starts.append(start) or all_data()):
         assert await hass.config_entries.async_setup(entry.entry_id)

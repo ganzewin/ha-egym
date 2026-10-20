@@ -79,7 +79,8 @@ def body_metric_types(latest):
 
 
 def workouts_to_statistics(workouts):
-    """Per exercise and session: gewicht (mean/min/max over sets, kg) and herhalingen (total over sets).
+    """Per exercise and session: gewicht (mean/min/max over sets, kg), herhalingen (total over sets)
+    and volume (sum of weight x repetitions, kg). Also the total volume of all exercises per session.
 
     Only rep-based sets with a weight are used, so cardio is skipped.
     """
@@ -102,16 +103,22 @@ def workouts_to_statistics(workouts):
                 exercise.get("completedAt") or workout["completedAt"],
                 exercise.get("timezone") or workout.get("timezone"),
             ))
-            entry = collected.setdefault((key, start), {"name": name, "weights": [], "reps": 0})
+            entry = collected.setdefault((key, start), {"name": name, "weights": [], "reps": 0, "volume": 0.0})
             entry["weights"].extend(float(s["weight"]) for s in sets)
             entry["reps"] += sum(int(s.get("numberOfReps") or 0) for s in sets)
+            entry["volume"] += sum(float(s["weight"]) * int(s.get("numberOfReps") or 0) for s in sets)
 
     result = {}
+    totals = {}
     for (key, start), entry in collected.items():
         # Names start with a group word, so sensors and chart legends sort per group
         name = _machine(entry["name"])
         _add(result, f"{DOMAIN}:{key}_gewicht", f"Training {name} gewicht", "kg", "mass", start, entry["weights"])
         _add(result, f"{DOMAIN}:{key}_herhalingen", f"Training {name} herhalingen", "herhalingen", None, start, [entry["reps"]])
+        _add(result, f"{DOMAIN}:{key}_volume", f"Training {name} volume", "kg", "mass", start, [entry["volume"]])
+        totals[start] = totals.get(start, 0.0) + entry["volume"]
+    for start, volume in totals.items():
+        _add(result, f"{DOMAIN}:training_volume_totaal", "Training volume totaal", "kg", "mass", start, [volume])
     return _finish(result)
 
 
@@ -258,6 +265,79 @@ def _series(item):
     return [[time, value] for time, value in sorted(item["points"].items())] if item else []
 
 
+def strength_index(history):
+    """Krachttest index per strength-test moment: [(iso time, index)], 100 = first test.
+
+    At each moment: sum of the last test per machine divided by the sum of the first tests of the same
+    machines, times 100. A machine that is tested for the first time later joins with its own first test
+    as baseline, so it does not make the index jump.
+    """
+    series = {
+        object_id: sorted(item["points"].items())
+        for object_id, item in history.items() if object_id.startswith("kracht_") and item["points"]
+    }
+    result = []
+    for time in sorted({t for points in series.values() for t, _ in points}):
+        current = baseline = 0.0
+        for points in series.values():
+            past = [value for t, value in points if t <= time]
+            if past:
+                current += past[-1]
+                baseline += points[0][1]
+        if baseline:
+            result.append((time, round(current / baseline * 100, 1)))
+    return result
+
+
+def index_to_statistics(index):
+    """The Krachttest index as a statistic, one row per strength-test hour."""
+    result = {}
+    for time, value in index:
+        _add(result, f"{DOMAIN}:krachttest_index", "Krachttest index", "%", None, datetime.datetime.fromisoformat(time), [value])
+    return _finish(result)
+
+
+def sessions_per_week(history, now):
+    """(sessions this week, average sessions per week over the last 4 weeks), counted as training days.
+
+    now is an aware datetime in the local time zone; weeks start on Monday.
+    """
+    days = {
+        datetime.datetime.fromisoformat(t).astimezone(now.tzinfo).date()
+        for object_id, item in history.items() if object_id.startswith("oefening_") and object_id.endswith("_gewicht")
+        for t in item["points"]
+    }
+    today = now.date()
+    week_start = today - datetime.timedelta(days=today.weekday())
+    this_week = sum(1 for d in days if week_start <= d <= today)
+    last_28 = sum(1 for d in days if today - datetime.timedelta(days=27) <= d <= today)
+    return this_week, round(last_28 / 4, 1)
+
+
+def progress_sensors(history, now):
+    """Sensors for the Krachttest index and training frequency."""
+    sensors = {}
+    index = strength_index(history)
+    if index:
+        tests = [item for object_id, item in history.items() if object_id.startswith("kracht_") and item["points"]]
+        sensors["krachttest_index"] = _sensor(
+            "Krachttest index", index[-1][1], "%", "mdi:chart-line-variant",
+            {
+                "gemeten_op": index[-1][0],
+                "nulmeting_kg": round(sum(sorted(i["points"].items())[0][1] for i in tests), 1),
+                "huidig_kg": round(sum(sorted(i["points"].items())[-1][1] for i in tests), 1),
+                "toestellen": len(tests),
+                "verloop": [[time, value] for time, value in index],
+            },
+            measurement=False,
+        )
+    this_week, per_week = sessions_per_week(history, now)
+    sensors["training_sessies_deze_week"] = _sensor("Training sessies deze week", this_week, "sessies", "mdi:calendar-week")
+    sensors["training_sessies_per_week"] = _sensor("Training sessies per week", per_week, "sessies", "mdi:calendar-sync",
+                                                   {"periode": "laatste 4 weken"})
+    return sensors
+
+
 def latest_sensors(history):
     """Sensors with the last value per exercise, machine and body metric; only height starts disabled.
 
@@ -270,15 +350,33 @@ def latest_sensors(history):
     }
     sensors = {}
     for object_id, item in latest_values(history).items():
+        if object_id.startswith("oefening_") and object_id.endswith("_volume"):
+            continue  # per-exercise volume stays a statistic only, to keep the sensor list short
         attrs = {"gemeten_op": item["time"]}
         if object_id.startswith("oefening_"):
             icon = "mdi:repeat" if object_id.endswith("_herhalingen") else "mdi:weight-kilogram"
             attrs["sessies"] = _series(history[object_id])
             if object_id.endswith("_gewicht"):
                 machine = item["name"].removeprefix("Training ").removesuffix(" gewicht")
-                attrs["krachttest"] = _series(strength_by_machine.get(machine))
+                tests = _series(strength_by_machine.get(machine))
+                attrs["krachttest"] = tests
+                if tests and tests[-1][1]:
+                    # Training weight as a share of the last strength test; EGYM sets it from that test
+                    attrs["pct_van_krachttest"] = round(item["value"] / tests[-1][1] * 100)
+        elif object_id == "training_volume_totaal":
+            icon = "mdi:weight-lifter"
+            attrs["sessies"] = _series(history[object_id])
         elif object_id.startswith("kracht_"):
             icon = "mdi:arm-flex"
+            points = sorted(history[object_id]["points"].items())
+            first_time, first = points[0]
+            attrs.update({
+                "nulmeting": first,
+                "nulmeting_op": first_time,
+                "verandering_kg": round(item["value"] - first, 1),
+                "verandering_pct": round((item["value"] - first) / first * 100, 1) if first else None,
+                "aantal_metingen": len(points),
+            })
         else:
             icon = "mdi:human"
         # Height hardly changes for adults; everything else is measured again at the Fitness Hub

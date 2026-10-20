@@ -13,6 +13,9 @@ It reads your EGYM account and keeps the history in Home Assistant's long-term s
 | Training weight per exercise | `egym:<name>_oefening_581_gewicht` | Mean, min and max weight over the sets of a session (kg) |
 | Repetitions per exercise | `egym:<name>_oefening_581_herhalingen` | Total repetitions of a session |
 | Strength test per machine | `egym:<name>_kracht_1002` | Strength value from the machine's strength test (kg) |
+| Volume per exercise | `egym:<name>_oefening_581_volume` | Weight × repetitions, summed over the sets of a session (kg) |
+| Total volume | `egym:<name>_training_volume_totaal` | Volume of all exercises of a session (kg) |
+| Strength index | `egym:<name>_krachttest_index` | Krachttest index at every strength test, see [Progress](#progress) |
 | Body composition | `egym:<name>_lichaam_weight_kg` | Weight, BMI, body fat, muscle mass, visceral fat and more from the Fitness Hub |
 
 **Sensors**, all under one device `EGYM <name>`. Their names start with a group word, so they sort per group:
@@ -21,14 +24,26 @@ It reads your EGYM account and keeps the history in Home Assistant's long-term s
 | --- | --- |
 | Activiteit | points, goal, progress towards the goal (%), points to keep the level, days left, level |
 | Bio-leeftijd | total, muscles, upper body, core, lower body, metabolic, cardio, flexibility |
-| Krachttest | last strength test per machine |
+| Krachttest | strength index; last strength test per machine, with first test and change as attributes |
 | Lichaam | last body composition values from the Fitness Hub (height starts disabled) |
 | Spierbalans | balance per muscle pair, with the optimal range as attributes |
-| Training | per exercise: weight of the heaviest set and total repetitions of the last session |
+| Training | per exercise: weight of the heaviest set and total repetitions of the last session; total volume of the last session; sessions this week and per week |
 
 Krachttest, Lichaam and Training sensors show the last measured value, with its time in the attribute `gemeten_op`; their history is in the statistics above, so these sensors have no state class on purpose. New exercises get a sensor after the next sync. Entities that were disabled before keep their setting after an update.
 
 Data is fetched every 6 hours and when Home Assistant starts. The first sync fetches everything since 2019.
+
+## Progress
+
+EGYM sets the training weight from the strength test of each machine, as a share of that test (roughly 40–60%, depending on machine and programme). The strength test is therefore the measure of progress; the training weight follows it.
+
+- **Krachttest index**: the sum of the last strength test of every machine, divided by the sum of their first tests, times 100. 100 is where you started; 118 means 18% stronger over all machines together. A machine tested for the first time later joins with its own first test as baseline, so it does not make the index jump. Machines with a high weight, such as the leg press, weigh more in the sum.
+- **Krachttest per machine**: attributes `nulmeting`, `nulmeting_op`, `verandering_kg`, `verandering_pct` (since the first test) and `aantal_metingen`.
+- **Training gewicht**: attribute `pct_van_krachttest`, the training weight as a share of the last strength test of the same machine.
+- **Volume**: weight × repetitions per exercise and per session, a measure of how much work a session was.
+- **Training sessies deze week / per week**: training days this week (from Monday) and on average over the last 4 weeks. They are recalculated at every sync, so a new week shows within 6 hours.
+
+Muscle balance between opposing machines, such as leg extension and leg curl, comes from EGYM itself in the Spierbalans sensors.
 
 ## Installation
 
@@ -121,6 +136,27 @@ series:
 ```
 
 These attributes are not written to the recorder; the statistics already hold the same history.
+
+The Krachttest index sensor has its course as the attribute `verloop`, for a chart in the same way:
+
+```yaml
+type: custom:apexcharts-card
+header:
+  show: true
+  title: Krachttest index
+  show_states: true
+graph_span: 180d
+span:
+  end: day
+series:
+  - entity: sensor.egym_daan_krachttest_index   # replace daan with your name
+    name: Index
+    curve: stepline
+    stroke_width: 3
+    extend_to: now
+    data_generator: |
+      return (entity.attributes.verloop || []).map(p => [new Date(p[0]).getTime(), p[1]]);
+```
 
 ## Icon
 
