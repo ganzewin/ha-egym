@@ -1,14 +1,18 @@
 """Made-up EGYM API answers in the shape the real API returns."""
 
 
-def _exercise(activity_id, label, completed, sets):
+def _exercise(activity_id, label, completed, sets, eccentric=()):
     return {
         "label": label,
         "completedAt": completed,
         "timezone": "Europe/Amsterdam",
         "activity": {"activityId": activity_id, "name": {"en": label, "nl": label}},
         "sets": [
-            {"setType": "REP_BASED", "numberOfReps": reps, "weight": weight, "duration": 30} for weight, reps in sets
+            {"setType": "REP_BASED", "trainingMethod": "REGULAR_REPBASED", "numberOfReps": reps, "weight": weight,
+             "duration": 30} for weight, reps in sets
+        ] + [
+            {"setType": "REP_BASED", "trainingMethod": "NEGATIVE_REPBASED", "numberOfReps": reps, "weight": weight,
+             "duration": 90} for weight, reps in eccentric
         ],
     }
 

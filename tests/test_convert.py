@@ -212,3 +212,50 @@ def test_ordered_names():
         assert ordered_name(unchanged, positions) == unchanged
     ten = parse_order(",".join(f"M{i}" for i in range(1, 11)))
     assert ordered_name("Krachttest M3", ten) == "Krachttest 03 M3"  # same width, so 10 sorts after 9
+
+
+
+def test_eccentric_sets_are_kept_apart():
+    from .sample_data import _exercise, _workout
+    workouts = [_workout("2026-10-21T15:47:10", [
+        # Lat Pulldown: eccentric set first, as at the gym
+        _exercise(335, "EGYM Lat Pulldown", "2026-10-21T15:41:39", [(45.0, 20)], eccentric=[(37.0, 15)]),
+    ])]
+    stats = workouts_to_statistics(workouts)
+    start = datetime.datetime(2026, 10, 21, 13, tzinfo=UTC)
+    assert stats["egym:oefening_335_gewicht"]["rows"][start]["max"] == 45.0
+    assert stats["egym:oefening_335_gewicht"]["rows"][start]["mean"] == 45.0  # classic only
+    assert stats["egym:oefening_335_herhalingen"]["rows"][start]["mean"] == 20
+    assert stats["egym:oefening_335_excentrisch_gewicht"]["name"] == "Training Lat Pulldown excentrisch gewicht"
+    assert stats["egym:oefening_335_excentrisch_herhalingen"]["rows"][start]["mean"] == 15
+    assert stats["egym:oefening_335_volume"]["rows"][start]["mean"] == 45 * 20 + 37 * 15  # all sets
+    sensors = latest_sensors(history_values(stats))
+    assert "oefening_335_excentrisch_gewicht" not in sensors
+    assert sensors["oefening_335_gewicht"]["attrs"]["excentrisch"] == 37.0
+    assert sensors["oefening_335_gewicht"]["attrs"]["excentrisch_sessies"] == [["2026-10-21T13:00:00+00:00", 37.0]]
+    assert sensors["oefening_335_herhalingen"]["attrs"]["excentrisch"] == 15
+
+
+def test_intensity_ignores_eccentric_sets():
+    stats = {
+        **workouts_to_statistics([{"completedAt": "2026-10-21T15:47:10", "timezone": "Europe/Amsterdam", "exercises": [
+            {"label": "EGYM Leg Press", "completedAt": "2026-10-21T15:34:21", "timezone": "Europe/Amsterdam",
+             "activity": {"activityId": 581, "name": {"nl": "EGYM Leg Press"}},
+             "sets": [{"setType": "REP_BASED", "trainingMethod": "NEGATIVE_REPBASED", "weight": 90.0, "numberOfReps": 15},
+                      {"setType": "REP_BASED", "trainingMethod": "REGULAR_REPBASED", "weight": 62.0, "numberOfReps": 20}]}]}]),
+        **strength_to_statistics(STRENGTH),
+    }
+    _machine, points = intensity(history_values(stats))["oefening_581"]
+    assert points[-1][1] == 59.0  # 62 / 105, the eccentric 90 kg does not count
+
+
+def test_unknown_method_gets_its_own_label():
+    from .sample_data import _workout
+    stats = workouts_to_statistics([_workout("2026-10-21T15:00:00", [
+        {"label": "EGYM Leg Press", "completedAt": "2026-10-21T15:00:00", "timezone": "Europe/Amsterdam",
+         "activity": {"activityId": 581, "name": {"nl": "EGYM Leg Press"}},
+         "sets": [{"setType": "REP_BASED", "trainingMethod": "ISOKINETIC_REPBASED", "weight": 50.0, "numberOfReps": 10}]},
+    ])])
+    assert "egym:oefening_581_isokinetic_gewicht" in stats
+    assert "egym:oefening_581_gewicht" not in stats
+

@@ -9,6 +9,17 @@ from .const import DOMAIN
 # Body metric types that are reference ranges, not measurements of you.
 _RANGE_SUFFIX = re.compile(r"_(LOW|TOP)(_|$)")
 
+# Training method per set. Classic sets keep the plain names; other methods get their label in the name.
+CLASSIC_METHODS = {"REGULAR_REPBASED", None}
+METHOD_LABELS = {"NEGATIVE_REPBASED": "excentrisch"}
+
+
+def _method_label(method):
+    if method in CLASSIC_METHODS:
+        return None
+    return METHOD_LABELS.get(method) or _slug(method.removesuffix("_REPBASED"))
+
+
 # type -> (Dutch name, unit, unit_class, factor)
 BODY_METRICS = {
     "WEIGHT_KG": ("Gewicht", "kg", "mass", 1),
@@ -79,12 +90,15 @@ def body_metric_types(latest):
 
 
 def workouts_to_statistics(workouts):
-    """Per exercise and session: gewicht (mean/min/max over sets, kg), herhalingen (total over sets)
-    and volume (sum of weight x repetitions, kg). Also the total volume of all exercises per session.
+    """Per exercise and session, per training method: gewicht (mean/min/max over sets, kg) and herhalingen
+    (total over sets). Classic sets keep the plain names (oefening_581_gewicht), other methods get their label
+    (oefening_581_excentrisch_gewicht). Volume (weight x repetitions, kg) counts all sets, per exercise and
+    as total per session, because it is the work that was done.
 
     Only rep-based sets with a weight are used, so cardio is skipped.
     """
-    collected = {}
+    collected = {}  # (key, label, start) -> {"name", "weights", "reps"}
+    volumes = {}  # (key, start) -> {"name", "volume"}
     for workout in workouts or []:
         for exercise in workout.get("exercises") or []:
             activity = exercise.get("activity") or {}
@@ -103,23 +117,43 @@ def workouts_to_statistics(workouts):
                 exercise.get("completedAt") or workout["completedAt"],
                 exercise.get("timezone") or workout.get("timezone"),
             ))
-            entry = collected.setdefault((key, start), {"name": name, "weights": [], "reps": 0, "volume": 0.0})
-            entry["weights"].extend(float(s["weight"]) for s in sets)
-            entry["reps"] += sum(int(s.get("numberOfReps") or 0) for s in sets)
-            entry["volume"] += sum(float(s["weight"]) * int(s.get("numberOfReps") or 0) for s in sets)
+            for s in sets:
+                entry = collected.setdefault((key, _method_label(s.get("trainingMethod")), start),
+                                             {"name": name, "weights": [], "reps": 0})
+                entry["weights"].append(float(s["weight"]))
+                entry["reps"] += int(s.get("numberOfReps") or 0)
+                volume = volumes.setdefault((key, start), {"name": name, "volume": 0.0})
+                volume["volume"] += float(s["weight"]) * int(s.get("numberOfReps") or 0)
 
     result = {}
-    totals = {}
-    for (key, start), entry in collected.items():
+    for (key, label, start), entry in collected.items():
         # Names start with a group word, so sensors and chart legends sort per group
         name = _machine(entry["name"])
-        _add(result, f"{DOMAIN}:{key}_gewicht", f"Training {name} gewicht", "kg", "mass", start, entry["weights"])
-        _add(result, f"{DOMAIN}:{key}_herhalingen", f"Training {name} herhalingen", "herhalingen", None, start, [entry["reps"]])
-        _add(result, f"{DOMAIN}:{key}_volume", f"Training {name} volume", "kg", "mass", start, [entry["volume"]])
+        id_part, name_part = (f"{key}_{label}", f"{name} {label}") if label else (key, name)
+        _add(result, f"{DOMAIN}:{id_part}_gewicht", f"Training {name_part} gewicht", "kg", "mass", start, entry["weights"])
+        _add(result, f"{DOMAIN}:{id_part}_herhalingen", f"Training {name_part} herhalingen", "herhalingen", None, start, [entry["reps"]])
+    totals = {}
+    for (key, start), entry in volumes.items():
+        _add(result, f"{DOMAIN}:{key}_volume", f"Training {_machine(entry['name'])} volume", "kg", "mass", start, [entry["volume"]])
         totals[start] = totals.get(start, 0.0) + entry["volume"]
     for start, volume in totals.items():
         _add(result, f"{DOMAIN}:training_volume_totaal", "Training volume totaal", "kg", "mass", start, [volume])
     return _finish(result)
+
+
+def _is_classic_weight(object_id):
+    """oefening_581_gewicht, not oefening_581_excentrisch_gewicht."""
+    return object_id.startswith("oefening_") and object_id.endswith("_gewicht") and not _other_method(object_id)
+
+
+def _other_method(object_id):
+    """The method label of a per-method object id, or None for classic and non-exercise ids."""
+    if not object_id.startswith("oefening_"):
+        return None
+    for label in set(METHOD_LABELS.values()):
+        if object_id.endswith((f"_{label}_gewicht", f"_{label}_herhalingen")):
+            return label
+    return None
 
 
 def strength_to_statistics(strength):
@@ -304,7 +338,7 @@ def intensity(history):
     tests = _strength_by_machine(history)
     result = {}
     for object_id, item in history.items():
-        if not (object_id.startswith("oefening_") and object_id.endswith("_gewicht")):
+        if not _is_classic_weight(object_id):
             continue
         machine = item["name"].removeprefix("Training ").removesuffix(" gewicht")
         machine_tests = tests.get(machine)
@@ -422,6 +456,8 @@ def latest_sensors(history, band=(40, 65)):
     for object_id, item in latest_values(history).items():
         if object_id.startswith("oefening_") and object_id.endswith("_volume"):
             continue  # per-exercise volume stays a statistic only, to keep the sensor list short
+        if _other_method(object_id):
+            continue  # other training methods are attributes of the classic sensors, see below
         attrs = {"gemeten_op": item["time"]}
         if object_id.startswith("oefening_"):
             icon = "mdi:repeat" if object_id.endswith("_herhalingen") else "mdi:weight-kilogram"
@@ -435,6 +471,14 @@ def latest_sensors(history, band=(40, 65)):
                     attrs["pct_van_krachttest"] = machine_intensity[1][-1][1]
                     attrs["positie_in_band_pct"] = band_position(machine_intensity[1][-1][1], *band)
                     attrs["intensiteit"] = [[t, v] for t, v in machine_intensity[1]]
+        if object_id.startswith("oefening_") and not _other_method(object_id):
+            # Other training methods of the same exercise, e.g. excentrisch: last value and course
+            base, kind = object_id.rsplit("_", 1)
+            for label in sorted(set(METHOD_LABELS.values())):
+                other = history.get(f"{base}_{label}_{kind}")
+                if other and other["points"]:
+                    attrs[f"{label}_sessies"] = _series(other)
+                    attrs[label] = other["points"][max(other["points"])]
         elif object_id == "training_volume_totaal":
             icon = "mdi:weight-lifter"
             attrs["sessies"] = _series(history[object_id])
@@ -460,7 +504,10 @@ def latest_sensors(history, band=(40, 65)):
     return sensors
 
 
-_ORDERED = re.compile(r"^(Training|Krachttest) (.+?)(?: (gewicht|herhalingen|volume|intensiteit))?$")
+_ORDERED = re.compile(
+    r"^(Training|Krachttest) (.+?)(?: ((?:(?:" + "|".join(sorted(set(METHOD_LABELS.values()))) + r") )?"
+    r"(?:gewicht|herhalingen|volume|intensiteit)))?$"
+)
 
 
 def parse_order(text):

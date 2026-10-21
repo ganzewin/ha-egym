@@ -10,10 +10,11 @@ It reads your EGYM account and keeps the history in Home Assistant's long-term s
 
 | Statistic | Example id | Content |
 | --- | --- | --- |
-| Training weight per exercise | `egym:<name>_oefening_581_gewicht` | Mean, min and max weight over the sets of a session (kg) |
-| Repetitions per exercise | `egym:<name>_oefening_581_herhalingen` | Total repetitions of a session |
+| Training weight per exercise | `egym:<name>_oefening_581_gewicht` | Mean, min and max weight over the classic sets of a session (kg) |
+| Repetitions per exercise | `egym:<name>_oefening_581_herhalingen` | Total repetitions of the classic sets of a session |
+| Eccentric weight and repetitions | `egym:<name>_oefening_581_excentrisch_gewicht`, `..._excentrisch_herhalingen` | The same for the eccentric sets |
 | Strength test per machine | `egym:<name>_kracht_1002` | Strength value from the machine's strength test (kg) |
-| Volume per exercise | `egym:<name>_oefening_581_volume` | Weight × repetitions, summed over the sets of a session (kg) |
+| Volume per exercise | `egym:<name>_oefening_581_volume` | Weight × repetitions, summed over all sets of a session, classic and eccentric (kg) |
 | Total volume | `egym:<name>_training_volume_totaal` | Volume of all exercises of a session (kg) |
 | Strength index | `egym:<name>_krachttest_index` | Krachttest index at every strength test, see [Progress](#progress) |
 | Intensity per exercise | `egym:<name>_oefening_581_intensiteit` | Training weight as % of the strength test in effect, per session |
@@ -46,6 +47,10 @@ EGYM sets the training weight from the strength test of each machine. In the str
 - **Training sessies deze week / per week**: training days this week (from Monday) and on average over the last 4 weeks. They are recalculated at every sync, so a new week shows within 6 hours.
 
 The band of 40–65% is set in `const.py` (`TRAINING_BAND`) for the strength endurance programme; other EGYM programmes use other ranges.
+
+### Training methods
+
+EGYM stores the method per set: `REGULAR_REPBASED` (classic) and `NEGATIVE_REPBASED` (eccentric). The Training gewicht and herhalingen sensors, the intensity and the band position use only the classic sets, so they stay comparable from session to session. The eccentric sets are kept apart: as statistics (`..._excentrisch_gewicht`, `..._excentrisch_herhalingen`) and as attributes `excentrisch` (last value) and `excentrisch_sessies` (course) on the classic sensors of the same exercise. Volume counts all sets. Another method that EGYM may use gets its own label in the same way, taken from its name.
 
 Muscle balance between opposing machines, such as leg extension and leg curl, comes from EGYM itself in the Spierbalans sensors.
 
