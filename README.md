@@ -12,7 +12,7 @@ It reads your EGYM account and keeps the history in Home Assistant's long-term s
 | --- | --- | --- |
 | Training weight per exercise | `egym:<name>_oefening_581_gewicht` | Mean, min and max weight over the classic sets of a session (kg) |
 | Repetitions per exercise | `egym:<name>_oefening_581_herhalingen` | Total repetitions of the classic sets of a session |
-| Eccentric weight and repetitions | `egym:<name>_oefening_581_excentrisch_gewicht`, `..._excentrisch_herhalingen` | The same for the eccentric sets |
+| Eccentric weight and repetitions | `egym:<name>_oefening_581_excentrisch_gewicht`, `..._excentrisch_herhalingen` | The same for the eccentric sets; the weight is the average of lifting and lowering |
 | Strength test per machine | `egym:<name>_kracht_1002` | Strength value from the machine's strength test (kg) |
 | Volume per exercise | `egym:<name>_oefening_581_volume` | Weight × repetitions, summed over all sets of a session, classic and eccentric (kg) |
 | Total volume | `egym:<name>_training_volume_totaal` | Volume of all exercises of a session (kg) |
@@ -50,7 +50,9 @@ The band of 40–65% is set in `const.py` (`TRAINING_BAND`) for the strength end
 
 ### Training methods
 
-EGYM stores the method per set: `REGULAR_REPBASED` (classic) and `NEGATIVE_REPBASED` (eccentric). The Training gewicht and herhalingen sensors, the intensity and the band position use only the classic sets, so they stay comparable from session to session. The eccentric sets are kept apart: as statistics (`..._excentrisch_gewicht`, `..._excentrisch_herhalingen`) and as attributes `excentrisch` (last value) and `excentrisch_sessies` (course) on the classic sensors of the same exercise. Volume counts all sets. Another method that EGYM may use gets its own label in the same way, taken from its name.
+EGYM stores the method per set: `REGULAR_REPBASED` (classic) and `NEGATIVE_REPBASED` (eccentric). The Training gewicht and herhalingen sensors, the intensity and the band position use only the classic sets, so they stay comparable from session to session. The eccentric sets are kept apart: as statistics (`..._excentrisch_gewicht`, `..._excentrisch_herhalingen`) and as attributes `excentrisch` (last value) and `excentrisch_sessies` (course) on the classic sensors of the same exercise. Volume counts all sets.
+
+For an eccentric set EGYM only stores the weight of the lifting phase. The machine makes the lowering phase heavier by a factor that EGYM does not send, so it is a setting under Configure: **Eccentric return factor**, default 1.55 (lifting 19 kg → lowering 29 kg, 22 kg → 34 kg, rounded to whole kg as the machine shows it). The eccentric weight is the average of both phases; the gewicht sensor also has `excentrisch_heen`, `excentrisch_terug` and `excentrisch_factor`. After changing the factor all sessions are recalculated. Another method that EGYM may use gets its own label in the same way, taken from its name.
 
 Muscle balance between opposing machines, such as leg extension and leg curl, comes from EGYM itself in the Spierbalans sensors.
 

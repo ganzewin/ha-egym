@@ -15,7 +15,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util, slugify
 
-from .const import CONF_BASE_URL, CONF_ORDER, DOMAIN, HISTORY_START, RESYNC_MARGIN, STORAGE_VERSION, STORE_SCHEMA, SYNC_INTERVAL, TRAINING_BAND
+from .const import CONF_BASE_URL, CONF_ECCENTRIC_FACTOR, CONF_ORDER, DEFAULT_ECCENTRIC_FACTOR, DOMAIN, HISTORY_START, RESYNC_MARGIN, STORAGE_VERSION, STORE_SCHEMA, SYNC_INTERVAL, TRAINING_BAND
 from .convert import (
     body_metric_types,
     body_metrics_to_statistics,
@@ -71,6 +71,7 @@ class EgymCoordinator(DataUpdateCoordinator):
         self.store = Store(hass, STORAGE_VERSION, store_key(entry))
         self.last_sync = None
         self.history = {}
+        self.eccentric_factor = float(entry.options.get(CONF_ECCENTRIC_FACTOR, DEFAULT_ECCENTRIC_FACTOR))
         self.person = person_name(entry)
         self.prefix = slugify(self.person)
 
@@ -78,7 +79,9 @@ class EgymCoordinator(DataUpdateCoordinator):
         data = await self.store.async_load() or {}
         # A store from an older version syncs everything once, so all sensors get filled
         # and every statistic gets the current names
-        if data.get("last_sync") and data.get("schema") == STORE_SCHEMA:
+        # A changed eccentric factor also needs a full sync, to recompute every eccentric session
+        if (data.get("last_sync") and data.get("schema") == STORE_SCHEMA
+                and data.get("excentrisch_factor") == self.eccentric_factor):
             self.last_sync = datetime.date.fromisoformat(data["last_sync"])
         self.history = data.get("history") or {}
 
@@ -96,7 +99,7 @@ class EgymCoordinator(DataUpdateCoordinator):
             raise UpdateFailed(f"EGYM not reachable: {error}") from error
 
         statistics = {
-            **workouts_to_statistics(data["workouts"]),
+            **workouts_to_statistics(data["workouts"], self.eccentric_factor),
             **strength_to_statistics(data["strength"]),
             **body_metrics_to_statistics(data["body_metrics"], self.hass.config.time_zone),
         }
@@ -107,7 +110,7 @@ class EgymCoordinator(DataUpdateCoordinator):
         positions = parse_order(entry.options.get(CONF_ORDER, ""))
         sensors = {
             **current_values(data["bio_age"], data["activity_level"], data["muscle_imbalances"]),
-            **latest_sensors(self.history, TRAINING_BAND),
+            **latest_sensors(self.history, TRAINING_BAND, self.eccentric_factor),
             **progress_sensors(self.history, dt_util.now(), TRAINING_BAND),
         }
         apply_order(sensors, statistics, positions)
@@ -128,6 +131,9 @@ class EgymCoordinator(DataUpdateCoordinator):
                 sorted(stat["rows"].values(), key=lambda row: row["start"]),
             )
         self.last_sync = today
-        await self.store.async_save({"schema": STORE_SCHEMA, "last_sync": today.isoformat(), "history": self.history})
+        await self.store.async_save({
+            "schema": STORE_SCHEMA, "excentrisch_factor": self.eccentric_factor,
+            "last_sync": today.isoformat(), "history": self.history,
+        })
         _LOGGER.debug("EGYM sync %s..%s: %d statistics", start, today, len(statistics))
         return sensors

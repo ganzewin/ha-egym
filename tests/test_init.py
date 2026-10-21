@@ -255,7 +255,33 @@ async def test_options_flow_changes_order_and_reloads(recorder_mock, enable_cust
         result = await hass.config_entries.options.async_configure(result["flow_id"], {"volgorde": "Leg Press"})
         assert result["type"] is FlowResultType.CREATE_ENTRY
         await hass.async_block_till_done()
-    assert entry.options == {"volgorde": "Leg Press"}
+    assert entry.options == {"volgorde": "Leg Press", "excentrisch_factor": 1.55}
     # Existing entity keeps its id, its name gets the number
     state = hass.states.get("sensor.egym_marcel_training_leg_press_gewicht")
     assert state.attributes["friendly_name"] == "EGYM Marcel Training 1 Leg Press gewicht"
+
+
+async def test_eccentric_factor_option_and_full_resync(recorder_mock, enable_custom_integrations, hass):
+    from .sample_data import _exercise, _workout
+    workouts = [_workout("2026-10-21T15:47:10", [
+        _exercise(333, "EGYM Chest Press", "2026-10-21T15:47:10", [(27.0, 20)], eccentric=[(22.0, 15)]),
+    ])]
+    data = {**all_data(), "workouts": workouts}
+    entry = _entry()
+    entry.add_to_hass(hass)
+    starts = []
+    with patch(FETCH, side_effect=lambda e, p, b, start, end: starts.append(start) or data):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        state = hass.states.get("sensor.egym_marcel_training_chest_press_gewicht")
+        assert state.state == "27.0"
+        assert (state.attributes["excentrisch"], state.attributes["excentrisch_terug"]) == (28.0, 34)
+        # Changing the factor reloads and recalculates every session from the start
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"volgorde": "", "excentrisch_factor": 1.5})
+        await hass.async_block_till_done()
+    assert entry.options["excentrisch_factor"] == 1.5
+    assert starts[-1] == datetime.date(2019, 1, 1)
+    state = hass.states.get("sensor.egym_marcel_training_chest_press_gewicht")
+    assert (state.attributes["excentrisch"], state.attributes["excentrisch_terug"]) == (27.5, 33)

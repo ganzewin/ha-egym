@@ -228,11 +228,14 @@ def test_eccentric_sets_are_kept_apart():
     assert stats["egym:oefening_335_herhalingen"]["rows"][start]["mean"] == 20
     assert stats["egym:oefening_335_excentrisch_gewicht"]["name"] == "Training Lat Pulldown excentrisch gewicht"
     assert stats["egym:oefening_335_excentrisch_herhalingen"]["rows"][start]["mean"] == 15
-    assert stats["egym:oefening_335_volume"]["rows"][start]["mean"] == 45 * 20 + 37 * 15  # all sets
+    # Eccentric: 37 kg lifting, 37 x 1.55 = 57 kg lowering, average 47 kg
+    assert stats["egym:oefening_335_excentrisch_gewicht"]["rows"][start]["mean"] == 47.0
+    assert stats["egym:oefening_335_volume"]["rows"][start]["mean"] == 45 * 20 + 47 * 15  # all sets
     sensors = latest_sensors(history_values(stats))
     assert "oefening_335_excentrisch_gewicht" not in sensors
-    assert sensors["oefening_335_gewicht"]["attrs"]["excentrisch"] == 37.0
-    assert sensors["oefening_335_gewicht"]["attrs"]["excentrisch_sessies"] == [["2026-10-21T13:00:00+00:00", 37.0]]
+    attrs = sensors["oefening_335_gewicht"]["attrs"]
+    assert (attrs["excentrisch"], attrs["excentrisch_heen"], attrs["excentrisch_terug"]) == (47.0, 37, 57)
+    assert attrs["excentrisch_sessies"] == [["2026-10-21T13:00:00+00:00", 47.0]]
     assert sensors["oefening_335_herhalingen"]["attrs"]["excentrisch"] == 15
 
 
@@ -259,3 +262,11 @@ def test_unknown_method_gets_its_own_label():
     assert "egym:oefening_581_isokinetic_gewicht" in stats
     assert "egym:oefening_581_gewicht" not in stats
 
+
+
+def test_eccentric_load_matches_the_machine():
+    from custom_components.egym.convert import eccentric_load
+    # Values read on the machines: Leg Extension 19 / 29 kg, Chest Press 22 / 34 kg
+    assert eccentric_load(19.0, 1.55) == (19.0, 29.0, 24.0)
+    assert eccentric_load(22.0, 1.55) == (22.0, 34.0, 28.0)
+    assert eccentric_load(22.0, 1.5)[1] == 33.0  # why 1.5 is not the default

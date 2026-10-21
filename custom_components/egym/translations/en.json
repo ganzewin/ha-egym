@@ -26,9 +26,10 @@
     "step": {
       "init": {
         "title": "EGYM",
-        "description": "Put the machines in the order of your gym, one per line, for example Leg Press, Seated Row, Leg Curl. They get a number in their names (Training 1 Leg Press gewicht), so lists and charts follow that order. Leave empty for no numbers. Entity IDs only get the number when the order is filled in when adding the integration.",
+        "description": "Put the machines in the order of your gym, one per line, for example Leg Press, Seated Row, Leg Curl. They get a number in their names (Training 1 Leg Press gewicht), so lists and charts follow that order. Leave empty for no numbers. Entity IDs only get the number when the order is filled in when adding the integration. For eccentric sets EGYM only stores the lifting weight. With the factor the integration works out the return weight, as the machine shows it, and uses the average of both. After a change all sessions are recalculated.",
         "data": {
-          "volgorde": "Order of the machines in your gym (optional), one per line"
+          "volgorde": "Order of the machines in your gym (optional), one per line",
+          "excentrisch_factor": "Eccentric return factor (return weight = lifting weight × factor)"
         }
       }
     }

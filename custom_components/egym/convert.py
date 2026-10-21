@@ -1,6 +1,7 @@
 """Turn EGYM API data into hourly statistic rows. No Home Assistant imports, so it can be tested on its own."""
 
 import datetime
+import math
 import re
 from zoneinfo import ZoneInfo
 
@@ -12,6 +13,13 @@ _RANGE_SUFFIX = re.compile(r"_(LOW|TOP)(_|$)")
 # Training method per set. Classic sets keep the plain names; other methods get their label in the name.
 CLASSIC_METHODS = {"REGULAR_REPBASED", None}
 METHOD_LABELS = {"NEGATIVE_REPBASED": "excentrisch"}
+
+
+def eccentric_load(weight, factor):
+    """EGYM stores the weight of the lifting phase of an eccentric set; the lowering phase is that weight times
+    a factor, rounded to whole kg as the machine shows it. Returns (lifting, lowering, average of both)."""
+    lowering = float(math.floor(weight * factor + 0.5))
+    return weight, lowering, (weight + lowering) / 2
 
 
 def _method_label(method):
@@ -89,10 +97,11 @@ def body_metric_types(latest):
     return sorted({m["type"] for m in latest or [] if m.get("type") and not _RANGE_SUFFIX.search(m["type"])})
 
 
-def workouts_to_statistics(workouts):
+def workouts_to_statistics(workouts, eccentric_factor=1.55):
     """Per exercise and session, per training method: gewicht (mean/min/max over sets, kg) and herhalingen
     (total over sets). Classic sets keep the plain names (oefening_581_gewicht), other methods get their label
-    (oefening_581_excentrisch_gewicht). Volume (weight x repetitions, kg) counts all sets, per exercise and
+    (oefening_581_excentrisch_gewicht). For eccentric sets the weight is the average of the lifting and the
+    lowering phase, see eccentric_load(). Volume (weight x repetitions, kg) counts all sets, per exercise and
     as total per session, because it is the work that was done.
 
     Only rep-based sets with a weight are used, so cardio is skipped.
@@ -118,12 +127,15 @@ def workouts_to_statistics(workouts):
                 exercise.get("timezone") or workout.get("timezone"),
             ))
             for s in sets:
-                entry = collected.setdefault((key, _method_label(s.get("trainingMethod")), start),
-                                             {"name": name, "weights": [], "reps": 0})
-                entry["weights"].append(float(s["weight"]))
+                label = _method_label(s.get("trainingMethod"))
+                weight = float(s["weight"])
+                if label == "excentrisch":
+                    weight = eccentric_load(weight, eccentric_factor)[2]
+                entry = collected.setdefault((key, label, start), {"name": name, "weights": [], "reps": 0})
+                entry["weights"].append(weight)
                 entry["reps"] += int(s.get("numberOfReps") or 0)
                 volume = volumes.setdefault((key, start), {"name": name, "volume": 0.0})
-                volume["volume"] += float(s["weight"]) * int(s.get("numberOfReps") or 0)
+                volume["volume"] += weight * int(s.get("numberOfReps") or 0)
 
     result = {}
     for (key, label, start), entry in collected.items():
@@ -441,7 +453,7 @@ def progress_sensors(history, now, band=(40, 65)):
     return sensors
 
 
-def latest_sensors(history, band=(40, 65)):
+def latest_sensors(history, band=(40, 65), eccentric_factor=1.55):
     """Sensors with the last value per exercise, machine and body metric; only height starts disabled.
 
     Training sensors also carry their whole history as the attribute "sessies", and the gewicht sensor
@@ -479,6 +491,12 @@ def latest_sensors(history, band=(40, 65)):
                 if other and other["points"]:
                     attrs[f"{label}_sessies"] = _series(other)
                     attrs[label] = other["points"][max(other["points"])]
+                    if label == "excentrisch" and kind == "gewicht":
+                        # The average is stored; lifting and lowering follow from it with the factor
+                        lifting = attrs[label] * 2 / (1 + eccentric_factor)
+                        attrs["excentrisch_factor"] = eccentric_factor
+                        attrs["excentrisch_heen"] = round(lifting)
+                        attrs["excentrisch_terug"] = round(attrs[label] * 2 - round(lifting))
         elif object_id == "training_volume_totaal":
             icon = "mdi:weight-lifter"
             attrs["sessies"] = _series(history[object_id])

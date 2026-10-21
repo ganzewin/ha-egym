@@ -6,9 +6,15 @@ import requests
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlowWithReload
 from homeassistant.const import CONF_EMAIL, CONF_NAME, CONF_PASSWORD
 from homeassistant.core import callback
-from homeassistant.helpers.selector import TextSelector, TextSelectorConfig
+from homeassistant.helpers.selector import (
+    NumberSelector,
+    NumberSelectorConfig,
+    NumberSelectorMode,
+    TextSelector,
+    TextSelectorConfig,
+)
 
-from .const import CONF_BASE_URL, CONF_ORDER, DOMAIN
+from .const import CONF_BASE_URL, CONF_ECCENTRIC_FACTOR, CONF_ORDER, DEFAULT_ECCENTRIC_FACTOR, DOMAIN
 from .egym_api import Api, AuthenticationError, DiscoveryError, EgymError
 
 SCHEMA = vol.Schema(
@@ -22,7 +28,12 @@ SCHEMA = vol.Schema(
 )
 
 OPTIONS_SCHEMA = vol.Schema(
-    {vol.Optional(CONF_ORDER, default=""): TextSelector(TextSelectorConfig(multiline=True))}
+    {
+        vol.Optional(CONF_ORDER, default=""): TextSelector(TextSelectorConfig(multiline=True)),
+        vol.Optional(CONF_ECCENTRIC_FACTOR, default=DEFAULT_ECCENTRIC_FACTOR): NumberSelector(
+            NumberSelectorConfig(min=1, max=3, step=0.01, mode=NumberSelectorMode.BOX)
+        ),
+    }
 )
 
 
@@ -83,7 +94,10 @@ class EgymOptionsFlow(OptionsFlowWithReload):
 
     async def async_step_init(self, user_input=None) -> ConfigFlowResult:
         if user_input is not None:
-            return self.async_create_entry(data={CONF_ORDER: user_input.get(CONF_ORDER, "").strip()})
+            return self.async_create_entry(data={
+                CONF_ORDER: user_input.get(CONF_ORDER, "").strip(),
+                CONF_ECCENTRIC_FACTOR: float(user_input.get(CONF_ECCENTRIC_FACTOR, DEFAULT_ECCENTRIC_FACTOR)),
+            })
         return self.async_show_form(
             step_id="init",
             data_schema=self.add_suggested_values_to_schema(OPTIONS_SCHEMA, self.config_entry.options),
