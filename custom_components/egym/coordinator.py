@@ -71,6 +71,7 @@ class EgymCoordinator(DataUpdateCoordinator):
         self.store = Store(hass, STORAGE_VERSION, store_key(entry))
         self.last_sync = None
         self.history = {}
+        self.last_fetch = None
         self.eccentric_factor = float(entry.options.get(CONF_ECCENTRIC_FACTOR, DEFAULT_ECCENTRIC_FACTOR))
         self.person = person_name(entry)
         self.prefix = slugify(self.person)
@@ -135,5 +136,6 @@ class EgymCoordinator(DataUpdateCoordinator):
             "schema": STORE_SCHEMA, "excentrisch_factor": self.eccentric_factor,
             "last_sync": today.isoformat(), "history": self.history,
         })
+        self.last_fetch = dt_util.utcnow()
         _LOGGER.debug("EGYM sync %s..%s: %d statistics", start, today, len(statistics))
         return sensors

@@ -34,7 +34,7 @@ It reads your EGYM account and keeps the history in Home Assistant's long-term s
 
 Krachttest, Lichaam and Training sensors show the last measured value, with its time in the attribute `gemeten_op`; their history is in the statistics above, so these sensors have no state class on purpose. New exercises get a sensor after the next sync. Entities that were disabled before keep their setting after an update.
 
-Data is fetched every 6 hours and when Home Assistant starts. The first sync fetches everything since 2019.
+Data is fetched every 6 hours and when Home Assistant starts. The first sync fetches everything since 2019. To fetch right after a training, press the button **Gegevens ophalen** (`button.egym_<name>_gegevens_ophalen`); the diagnostic sensor **Gegevens laatst opgehaald** shows when the last successful sync was.
 
 ## Progress
 

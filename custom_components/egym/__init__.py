@@ -8,7 +8,7 @@ from homeassistant.helpers.storage import Store
 from .const import DOMAIN, STORAGE_VERSION
 from .coordinator import EgymCoordinator, store_key
 
-PLATFORMS = [Platform.SENSOR]
+PLATFORMS = [Platform.BUTTON, Platform.SENSOR]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

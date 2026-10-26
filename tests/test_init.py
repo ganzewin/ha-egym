@@ -217,7 +217,7 @@ async def test_sensors_sort_per_group(recorder_mock, enable_custom_integrations,
     # every group word appears as one consecutive block
     blocks = [g for i, g in enumerate(groups) if i == 0 or groups[i - 1] != g]
     assert len(blocks) == len(set(blocks)), names
-    assert set(blocks) == {"Activiteit", "Bio-leeftijd", "Krachttest", "Lichaam", "Spierbalans", "Training"}, names
+    assert set(blocks) == {"Activiteit", "Bio-leeftijd", "Gegevens", "Krachttest", "Lichaam", "Spierbalans", "Training"}, names
 
 
 async def test_machine_order_numbers_names_and_entity_ids(recorder_mock, enable_custom_integrations, hass):
@@ -285,3 +285,19 @@ async def test_eccentric_factor_option_and_full_resync(recorder_mock, enable_cus
     assert starts[-1] == datetime.date(2019, 1, 1)
     state = hass.states.get("sensor.egym_marcel_training_chest_press_gewicht")
     assert (state.attributes["excentrisch"], state.attributes["excentrisch_terug"]) == (27.5, 33)
+
+
+async def test_refresh_button_fetches_now(recorder_mock, enable_custom_integrations, hass):
+    entry = _entry()
+    entry.add_to_hass(hass)
+    calls = []
+    with patch(FETCH, side_effect=lambda *args: calls.append(args) or all_data()):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        first = hass.states.get("sensor.egym_marcel_gegevens_laatst_opgehaald").state
+        assert first not in ("unknown", "unavailable")
+        await hass.services.async_call(
+            "button", "press", {"entity_id": "button.egym_marcel_gegevens_ophalen"}, blocking=True)
+        await hass.async_block_till_done()
+    assert len(calls) == 2
+    assert hass.states.get("sensor.egym_marcel_gegevens_laatst_opgehaald").state >= first
