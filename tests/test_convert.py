@@ -239,17 +239,25 @@ def test_eccentric_sets_are_kept_apart():
     assert sensors["oefening_335_herhalingen"]["attrs"]["excentrisch"] == 15
 
 
-def test_intensity_ignores_eccentric_sets():
+def _leg_press(completed, sets):
+    return {"completedAt": completed, "timezone": "Europe/Amsterdam", "exercises": [
+        {"label": "EGYM Leg Press", "completedAt": completed, "timezone": "Europe/Amsterdam",
+         "activity": {"activityId": 581, "name": {"nl": "EGYM Leg Press"}},
+         "sets": [{"setType": "REP_BASED", "trainingMethod": method, "weight": weight, "numberOfReps": reps}
+                  for method, weight, reps in sets]}]}
+
+
+def test_intensity_counts_eccentric_sessions():
     stats = {
-        **workouts_to_statistics([{"completedAt": "2026-10-21T15:47:10", "timezone": "Europe/Amsterdam", "exercises": [
-            {"label": "EGYM Leg Press", "completedAt": "2026-10-21T15:34:21", "timezone": "Europe/Amsterdam",
-             "activity": {"activityId": 581, "name": {"nl": "EGYM Leg Press"}},
-             "sets": [{"setType": "REP_BASED", "trainingMethod": "NEGATIVE_REPBASED", "weight": 90.0, "numberOfReps": 15},
-                      {"setType": "REP_BASED", "trainingMethod": "REGULAR_REPBASED", "weight": 62.0, "numberOfReps": 20}]}]}]),
+        **workouts_to_statistics([
+            _leg_press("2026-10-21T15:34:21", [("REGULAR_REPBASED", 62.0, 20)]),
+            # Eccentric only: 50 kg lifting, 78 kg lowering, average 64 kg
+            _leg_press("2026-10-26T15:34:21", [("NEGATIVE_REPBASED", 50.0, 15)]),
+        ]),
         **strength_to_statistics(STRENGTH),
     }
     _machine, points = intensity(history_values(stats))["oefening_581"]
-    assert points[-1][1] == 59.0  # 62 / 105, the eccentric 90 kg does not count
+    assert [pct for _t, pct in points[-2:]] == [59.0, 61.0]  # 62 / 105 and 64 / 105
 
 
 def test_unknown_method_gets_its_own_label():

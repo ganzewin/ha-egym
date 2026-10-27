@@ -343,26 +343,35 @@ def _strength_by_machine(history):
 def intensity(history):
     """Training weight as % of the strength test in effect at each session: {oefening_X: (name, [(time, pct)])}.
 
-    The weight is the heaviest set of the session; the test in effect is the last one at or before the
-    session hour (EGYM runs the test at the start of a session, in the same hour). Sessions before the
-    first test of a machine are left out.
+    The weight is the heaviest set of the session, classic and other methods together (for eccentric sets
+    the average of lifting and lowering), so every session counts. The test in effect is the last one at
+    or before the session hour (EGYM runs the test at the start of a session, in the same hour). Sessions
+    before the first test of a machine are left out.
     """
     tests = _strength_by_machine(history)
-    result = {}
+    weights = {}  # oefening_X -> (machine, {time: heaviest weight})
     for object_id, item in history.items():
-        if not _is_classic_weight(object_id):
+        label = _other_method(object_id)
+        if not (_is_classic_weight(object_id) or (label and object_id.endswith("_gewicht"))):
             continue
-        machine = item["name"].removeprefix("Training ").removesuffix(" gewicht")
+        suffix = f"_{label}_gewicht" if label else "_gewicht"
+        name_suffix = f" {label} gewicht" if label else " gewicht"
+        machine = item["name"].removeprefix("Training ").removesuffix(name_suffix)
+        _machine_name, by_time = weights.setdefault(object_id.removesuffix(suffix), (machine, {}))
+        for time, weight in item["points"].items():
+            by_time[time] = max(weight, by_time.get(time, weight))
+    result = {}
+    for key, (machine, by_time) in weights.items():
         machine_tests = tests.get(machine)
         if not machine_tests:
             continue
         points = []
-        for time, weight in sorted(item["points"].items()):
+        for time, weight in sorted(by_time.items()):
             in_effect = [value for t, value in machine_tests if t <= time]
             if in_effect and in_effect[-1]:
                 points.append((time, round(weight / in_effect[-1] * 100, 1)))
         if points:
-            result[object_id.removesuffix("_gewicht")] = (machine, points)
+            result[key] = (machine, points)
     return result
 
 
