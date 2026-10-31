@@ -278,3 +278,12 @@ def test_eccentric_load_matches_the_machine():
     assert eccentric_load(19.0, 1.55) == (19.0, 29.0, 24.0)
     assert eccentric_load(22.0, 1.55) == (22.0, 34.0, 28.0)
     assert eccentric_load(22.0, 1.5)[1] == 33.0  # why 1.5 is not the default
+
+
+def test_session_over_two_hours_is_one_session():
+    from custom_components.egym.convert import session_intensity
+    per_machine = {
+        "oefening_1": ("Abdominal Crunch", [("2026-10-26T15:00:00+00:00", 69.5), ("2026-10-31T09:00:00+00:00", 78.0)]),
+        "oefening_2": ("Leg Press", [("2026-10-26T15:00:00+00:00", 57.5), ("2026-10-31T10:00:00+00:00", 62.0)]),
+    }
+    assert session_intensity(per_machine) == [("2026-10-26T15:00:00+00:00", 63.5), ("2026-10-31T10:00:00+00:00", 70.0)]

@@ -375,13 +375,33 @@ def intensity(history):
     return result
 
 
+SESSION_GAP = datetime.timedelta(hours=3)
+
+
+def _sessions(times):
+    """Group hour starts into sessions: a session is a run of hours with less than SESSION_GAP between them.
+
+    A session that spans a full hour (e.g. 10:50-11:20) has exercises in two hour slots; it still is one
+    session. Returns {time: time of the last hour of its session}.
+    """
+    result, group = {}, []
+    for time in sorted(set(times)):
+        if group and datetime.datetime.fromisoformat(time) - datetime.datetime.fromisoformat(group[-1]) >= SESSION_GAP:
+            result.update(dict.fromkeys(group, group[-1]))
+            group = []
+        group.append(time)
+    result.update(dict.fromkeys(group, group[-1] if group else None))
+    return result
+
+
 def session_intensity(per_machine):
-    """Average intensity over the machines trained per session: [(time, pct)]."""
-    by_time = {}
+    """Average intensity over the machines trained per session: [(time, pct)], time = last hour of the session."""
+    session_of = _sessions(time for _machine, points in per_machine.values() for time, _pct in points)
+    by_session = {}
     for _machine, points in per_machine.values():
         for time, pct in points:
-            by_time.setdefault(time, []).append(pct)
-    return [(time, round(sum(v) / len(v), 1)) for time, v in sorted(by_time.items())]
+            by_session.setdefault(session_of[time], []).append(pct)
+    return [(time, round(sum(v) / len(v), 1)) for time, v in sorted(by_session.items())]
 
 
 def band_position(pct, low, high):
@@ -442,7 +462,8 @@ def progress_sensors(history, now, band=(40, 65)):
     if sessions:
         low, high = band
         time, pct = sessions[-1]
-        latest = {machine: points[-1][1] for machine, points in per_machine.values() if points[-1][0] == time}
+        session_of = _sessions(t for _machine, points in per_machine.values() for t, _pct in points)
+        latest = {machine: points[-1][1] for machine, points in per_machine.values() if session_of[points[-1][0]] == time}
         sensors["training_intensiteit"] = _sensor(
             "Training intensiteit", pct, "%", "mdi:speedometer",
             {
