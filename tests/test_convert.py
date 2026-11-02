@@ -287,3 +287,40 @@ def test_session_over_two_hours_is_one_session():
         "oefening_2": ("Leg Press", [("2026-10-26T15:00:00+00:00", 57.5), ("2026-10-31T10:00:00+00:00", 62.0)]),
     }
     assert session_intensity(per_machine) == [("2026-10-26T15:00:00+00:00", 63.5), ("2026-10-31T10:00:00+00:00", 70.0)]
+
+
+def test_session_over_two_hours_is_one_session_everywhere():
+    from custom_components.egym.convert import session_sensors, workouts_to_sessions
+    from .sample_data import _exercise, _workout
+    workouts = [_workout("2026-10-31T11:20:00", [
+        _exercise(332, "EGYM Abdominal Crunch", "2026-10-31T10:52:00", [(46.0, 15)]),
+        _exercise(581, "EGYM Leg Press", "2026-10-31T11:05:00", [(71.0, 15)]),
+        _exercise(333, "EGYM Chest Press", "2026-10-31T11:20:00", [(38.0, 15)]),
+    ])]
+    stats = workouts_to_statistics(workouts)
+    # One volume bar for the session, at its last hour (10:00 UTC = 11:00 local)
+    assert list(stats["egym:training_volume_totaal"]["rows"]) == [datetime.datetime(2026, 10, 31, 10, tzinfo=UTC)]
+    assert stats["egym:training_volume_totaal"]["rows"][datetime.datetime(2026, 10, 31, 10, tzinfo=UTC)]["mean"] == (46 + 71 + 38) * 15
+    sessions = workouts_to_sessions(workouts)
+    assert len(sessions) == 1
+    sensors = session_sensors(sessions, "Europe/Amsterdam")
+    assert sensors["training_sessies_totaal"]["value"] == 1
+    last = sensors["training_laatste_sessie"]
+    # Each sample set takes 30 s, so the first exercise started at 10:51:30
+    assert last["attrs"]["tijd"] == "10:51–11:20"
+    assert last["attrs"]["datum"] == "za 31 okt 2026"
+    assert last["attrs"]["toestellen"] == 3
+    assert last["device_class"] == "timestamp"
+
+
+def test_sessions_far_apart_are_separate():
+    from custom_components.egym.convert import merge_sessions, workouts_to_sessions
+    from .sample_data import WORKOUTS
+    sessions = workouts_to_sessions(WORKOUTS)
+    assert len(sessions) == 2
+    # A later sync of the same session (now longer) replaces it instead of adding one
+    stored = dict(sessions)
+    key = min(stored)
+    longer = {key: {**stored[key], "eind": "2026-10-01T09:59:00+00:00"}}
+    merge_sessions(stored, longer)
+    assert len(stored) == 2 and stored[key]["eind"] == "2026-10-01T09:59:00+00:00"

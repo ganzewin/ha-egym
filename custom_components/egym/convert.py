@@ -97,6 +97,25 @@ def body_metric_types(latest):
     return sorted({m["type"] for m in latest or [] if m.get("type") and not _RANGE_SUFFIX.search(m["type"])})
 
 
+SESSION_GAP = datetime.timedelta(hours=3)
+
+
+def _sessions(times):
+    """Group hour starts into sessions: a session is a run of hours with less than SESSION_GAP between them.
+
+    A session that spans a full hour (e.g. 10:50-11:20) has exercises in two hour slots; it still is one
+    session. Returns {time: time of the last hour of its session}.
+    """
+    result, group = {}, []
+    for time in sorted(set(times)):
+        if group and datetime.datetime.fromisoformat(time) - datetime.datetime.fromisoformat(group[-1]) >= SESSION_GAP:
+            result.update(dict.fromkeys(group, group[-1]))
+            group = []
+        group.append(time)
+    result.update(dict.fromkeys(group, group[-1] if group else None))
+    return result
+
+
 def workouts_to_statistics(workouts, eccentric_factor=1.55):
     """Per exercise and session, per training method: gewicht (mean/min/max over sets, kg) and herhalingen
     (total over sets). Classic sets keep the plain names (oefening_581_gewicht), other methods get their label
@@ -148,7 +167,13 @@ def workouts_to_statistics(workouts, eccentric_factor=1.55):
     for (key, start), entry in volumes.items():
         _add(result, f"{DOMAIN}:{key}_volume", f"Training {_machine(entry['name'])} volume", "kg", "mass", start, [entry["volume"]])
         totals[start] = totals.get(start, 0.0) + entry["volume"]
+    # A session that runs over a full hour has exercises in two hour slots; the total goes to its last hour
+    session_of = _sessions(start.isoformat() for start in totals)
+    per_session = {}
     for start, volume in totals.items():
+        end = datetime.datetime.fromisoformat(session_of[start.isoformat()])
+        per_session[end] = per_session.get(end, 0.0) + volume
+    for start, volume in per_session.items():
         _add(result, f"{DOMAIN}:training_volume_totaal", "Training volume totaal", "kg", "mass", start, [volume])
     return _finish(result)
 
@@ -180,6 +205,77 @@ def strength_to_statistics(strength):
         label = activity.get("label") or f"Toestel {activity['activityId']}"
         _add(result, f"{DOMAIN}:kracht_{activity['activityId']}", f"Krachttest {_machine(label)}", "kg", "mass", start, [float(value)])
     return _finish(result)
+
+
+_WEEKDAYS = ("ma", "di", "wo", "do", "vr", "za", "zo")
+_MONTHS = ("jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep", "okt", "nov", "dec")
+
+
+def workouts_to_sessions(workouts):
+    """Training sessions: {start iso (UTC): {"start", "eind" (iso, UTC), "toestellen"}}.
+
+    Exercises with strength sets less than SESSION_GAP apart form one session, whether EGYM stores them as one
+    workout or several. EGYM gives the minute each exercise was completed and the duration of each set, so
+    the start is the completion of the first exercise minus the duration of its sets.
+    """
+    exercises = []
+    for workout in workouts or []:
+        for exercise in workout.get("exercises") or []:
+            sets = [s for s in exercise.get("sets") or [] if s.get("setType") == "REP_BASED" and s.get("weight") is not None]
+            if not sets:
+                continue
+            done = _parse(exercise.get("completedAt") or workout["completedAt"], exercise.get("timezone") or workout.get("timezone"))
+            took = datetime.timedelta(seconds=sum(int(s.get("duration") or 0) for s in sets))
+            machine = (exercise.get("activity") or {}).get("activityId") or exercise.get("label")
+            exercises.append((done.astimezone(datetime.UTC), took, machine))
+    sessions, current = {}, None
+    for done, took, machine in sorted(exercises, key=lambda item: item[0]):
+        if current is None or done - current["eind"] >= SESSION_GAP:
+            current = {"start": done - took, "eind": done, "toestellen": set()}
+            sessions[current["start"]] = current
+        current["start"] = min(current["start"], done - took)
+        current["eind"] = done
+        current["toestellen"].add(machine)
+    return {
+        item["start"].isoformat(): {"start": item["start"].isoformat(), "eind": item["eind"].isoformat(), "toestellen": len(item["toestellen"])}
+        for item in sessions.values()
+    }
+
+
+def merge_sessions(stored, new):
+    """Add newly fetched sessions; a fetched session replaces stored ones that overlap it (same session)."""
+    for key, item in new.items():
+        for old_key, old in list(stored.items()):
+            if old_key != key and old["start"] <= item["eind"] and item["start"] <= old["eind"]:
+                del stored[old_key]
+        stored[key] = item
+    return stored
+
+
+def session_sensors(sessions, zone_name):
+    """Sensors for the number of sessions and the last session (start as timestamp, with date and times)."""
+    if not sessions:
+        return {}
+    zone = ZoneInfo(zone_name)
+    last = sessions[max(sessions)]
+    start = datetime.datetime.fromisoformat(last["start"]).astimezone(zone)
+    end = datetime.datetime.fromisoformat(last["eind"]).astimezone(zone)
+    first = datetime.datetime.fromisoformat(sessions[min(sessions)]["start"]).astimezone(zone)
+    return {
+        "training_sessies_totaal": _sensor("Training sessies totaal", len(sessions), "sessies", "mdi:counter",
+                                           {"sinds": first.date().isoformat()}, measurement=False),
+        "training_laatste_sessie": {
+            **_sensor("Training laatste sessie", start, None, "mdi:calendar-check", {
+                "datum": f"{_WEEKDAYS[start.weekday()]} {start.day} {_MONTHS[start.month - 1]} {start.year}",
+                "tijd": f"{start:%H:%M}–{end:%H:%M}",
+                "start": start.isoformat(),
+                "eind": end.isoformat(),
+                "duur_min": round((end - start).total_seconds() / 60),
+                "toestellen": last["toestellen"],
+            }),
+            "device_class": "timestamp",
+        },
+    }
 
 
 def body_metrics_to_statistics(body_metrics, zone_name):
@@ -372,25 +468,6 @@ def intensity(history):
                 points.append((time, round(weight / in_effect[-1] * 100, 1)))
         if points:
             result[key] = (machine, points)
-    return result
-
-
-SESSION_GAP = datetime.timedelta(hours=3)
-
-
-def _sessions(times):
-    """Group hour starts into sessions: a session is a run of hours with less than SESSION_GAP between them.
-
-    A session that spans a full hour (e.g. 10:50-11:20) has exercises in two hour slots; it still is one
-    session. Returns {time: time of the last hour of its session}.
-    """
-    result, group = {}, []
-    for time in sorted(set(times)):
-        if group and datetime.datetime.fromisoformat(time) - datetime.datetime.fromisoformat(group[-1]) >= SESSION_GAP:
-            result.update(dict.fromkeys(group, group[-1]))
-            group = []
-        group.append(time)
-    result.update(dict.fromkeys(group, group[-1] if group else None))
     return result
 
 

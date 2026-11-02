@@ -30,7 +30,7 @@ It reads your EGYM account and keeps the history in Home Assistant's long-term s
 | Krachttest | strength index; last strength test per machine, with first test and change as attributes |
 | Lichaam | last body composition values from the Fitness Hub (height starts disabled) |
 | Spierbalans | balance per muscle pair, with the optimal range as attributes |
-| Training | intensity of the last session; per exercise: weight of the heaviest set and total repetitions of the last session; total volume of the last session; sessions this week and per week |
+| Training | intensity of the last session; per exercise: weight of the heaviest set and total repetitions of the last session; total volume of the last session; sessions this week, per week and in total; the last session |
 
 Krachttest, Lichaam and Training sensors show the last measured value, with its time in the attribute `gemeten_op`; their history is in the statistics above, so these sensors have no state class on purpose. New exercises get a sensor after the next sync. Entities that were disabled before keep their setting after an update.
 
@@ -44,6 +44,7 @@ EGYM sets the training weight from the strength test of each machine. In the str
 - **Krachttest index**: the result. Per machine the last strength test divided by the first, averaged over the machines, times 100: every machine weighs the same. 100 is where you started. A machine tested for the first time later joins at 100. Attribute `groei_per_toestel_pct`.
 - **Krachttest per machine**: attributes `nulmeting`, `nulmeting_op`, `verandering_kg`, `verandering_pct` (since the first test) and `aantal_metingen`.
 - **Volume**: weight × repetitions per exercise and per session, a measure of how much work a session was.
+- **Training sessies totaal** and **Training laatste sessie**: the number of sessions since the first one, and the last session as a timestamp (its start) with the attributes `datum`, `tijd` (start–end), `start`, `eind`, `duur_min` and `toestellen`. Exercises less than 3 hours apart count as one session, also when a session runs over a full hour; the start is estimated from the duration of the sets of the first exercise.
 - **Training sessies deze week / per week**: training days this week (from Monday) and on average over the last 4 weeks. They are recalculated at every sync, so a new week shows within 6 hours.
 
 The band of 40–65% is set in `const.py` (`TRAINING_BAND`) for the strength endurance programme; other EGYM programmes use other ranges.

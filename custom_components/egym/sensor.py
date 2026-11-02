@@ -57,6 +57,8 @@ class EgymSensor(CoordinatorEntity[EgymCoordinator], SensorEntity):
         self._attr_entity_registry_enabled_default = info["enabled"]
         if info["measurement"]:
             self._attr_state_class = SensorStateClass.MEASUREMENT
+        if info.get("device_class"):
+            self._attr_device_class = SensorDeviceClass(info["device_class"])
         self._attr_device_info = device_info(coordinator, entry)
 
     @property

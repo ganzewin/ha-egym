@@ -28,7 +28,10 @@ from .convert import (
     parse_order,
     progress_sensors,
     strength_to_statistics,
+    workouts_to_sessions,
     workouts_to_statistics,
+    merge_sessions,
+    session_sensors,
 )
 from .egym_api import Api, AuthenticationError, EgymError
 
@@ -71,6 +74,7 @@ class EgymCoordinator(DataUpdateCoordinator):
         self.store = Store(hass, STORAGE_VERSION, store_key(entry))
         self.last_sync = None
         self.history = {}
+        self.sessions = {}
         self.last_fetch = None
         self.eccentric_factor = float(entry.options.get(CONF_ECCENTRIC_FACTOR, DEFAULT_ECCENTRIC_FACTOR))
         self.person = person_name(entry)
@@ -85,6 +89,7 @@ class EgymCoordinator(DataUpdateCoordinator):
                 and data.get("excentrisch_factor") == self.eccentric_factor):
             self.last_sync = datetime.date.fromisoformat(data["last_sync"])
         self.history = data.get("history") or {}
+        self.sessions = data.get("sessions") or {}
 
     async def _async_update_data(self):
         today = dt_util.now().date()
@@ -104,8 +109,12 @@ class EgymCoordinator(DataUpdateCoordinator):
             **strength_to_statistics(data["strength"]),
             **body_metrics_to_statistics(data["body_metrics"], self.hass.config.time_zone),
         }
+        if start == HISTORY_START:
+            # A full sync sees everything, so the stored history is rebuilt (drops points of older versions)
+            self.history, self.sessions = {}, {}
         # Later syncs only see recent days, so the values per measurement are kept in the store
         merge_history(self.history, history_values(statistics))
+        merge_sessions(self.sessions, workouts_to_sessions(data["workouts"]))
         # Index and intensity need every strength test since the first one, so they come from the stored history
         statistics.update(derived_statistics(self.history))
         positions = parse_order(entry.options.get(CONF_ORDER, ""))
@@ -113,6 +122,7 @@ class EgymCoordinator(DataUpdateCoordinator):
             **current_values(data["bio_age"], data["activity_level"], data["muscle_imbalances"]),
             **latest_sensors(self.history, TRAINING_BAND, self.eccentric_factor),
             **progress_sensors(self.history, dt_util.now(), TRAINING_BAND),
+            **session_sensors(self.sessions, self.hass.config.time_zone),
         }
         apply_order(sensors, statistics, positions)
         for statistic_id, stat in statistics.items():
@@ -134,7 +144,7 @@ class EgymCoordinator(DataUpdateCoordinator):
         self.last_sync = today
         await self.store.async_save({
             "schema": STORE_SCHEMA, "excentrisch_factor": self.eccentric_factor,
-            "last_sync": today.isoformat(), "history": self.history,
+            "last_sync": today.isoformat(), "history": self.history, "sessions": self.sessions,
         })
         self.last_fetch = dt_util.utcnow()
         _LOGGER.debug("EGYM sync %s..%s: %d statistics", start, today, len(statistics))
