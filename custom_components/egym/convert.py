@@ -215,8 +215,10 @@ def workouts_to_sessions(workouts):
     """Training sessions: {start iso (UTC): {"start", "eind" (iso, UTC), "toestellen"}}.
 
     Exercises with strength sets less than SESSION_GAP apart form one session, whether EGYM stores them as one
-    workout or several. EGYM gives the minute each exercise was completed and the duration of each set, so
-    the start is the completion of the first exercise minus the duration of its sets.
+    workout or several. EGYM trains in a circuit: all machines once, then the next round. Each exercise is
+    stamped when its first round was done, with the duration of every set. So the start is the stamp of the
+    first exercise minus the duration of one set, the first round ends at the last stamp, and the end is
+    estimated as start + rounds x the length of the first round (rounds = the usual number of sets).
     """
     exercises = []
     for workout in workouts or []:
@@ -225,21 +227,25 @@ def workouts_to_sessions(workouts):
             if not sets:
                 continue
             done = _parse(exercise.get("completedAt") or workout["completedAt"], exercise.get("timezone") or workout.get("timezone"))
-            took = datetime.timedelta(seconds=sum(int(s.get("duration") or 0) for s in sets))
+            took = datetime.timedelta(seconds=int(sets[0].get("duration") or 0))
             machine = (exercise.get("activity") or {}).get("activityId") or exercise.get("label")
-            exercises.append((done.astimezone(datetime.UTC), took, machine))
-    sessions, current = {}, None
-    for done, took, machine in sorted(exercises, key=lambda item: item[0]):
-        if current is None or done - current["eind"] >= SESSION_GAP:
-            current = {"start": done - took, "eind": done, "toestellen": set()}
-            sessions[current["start"]] = current
-        current["start"] = min(current["start"], done - took)
-        current["eind"] = done
+            exercises.append((done.astimezone(datetime.UTC), took, machine, len(sets)))
+    sessions, current = [], None
+    for done, took, machine, count in sorted(exercises, key=lambda item: item[0]):
+        if current is None or done - current["last"] >= SESSION_GAP:
+            current = {"start": done - took, "last": done, "toestellen": set(), "sets": []}
+            sessions.append(current)
+        current["last"] = done
         current["toestellen"].add(machine)
-    return {
-        item["start"].isoformat(): {"start": item["start"].isoformat(), "eind": item["eind"].isoformat(), "toestellen": len(item["toestellen"])}
-        for item in sessions.values()
-    }
+        current["sets"].append(count)
+    result = {}
+    for item in sessions:
+        rounds = max(set(item["sets"]), key=item["sets"].count)
+        end = item["start"] + (item["last"] - item["start"]) * rounds
+        result[item["start"].isoformat()] = {
+            "start": item["start"].isoformat(), "eind": end.isoformat(), "toestellen": len(item["toestellen"]),
+        }
+    return result
 
 
 def merge_sessions(stored, new):

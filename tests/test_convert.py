@@ -306,7 +306,7 @@ def test_session_over_two_hours_is_one_session_everywhere():
     sensors = session_sensors(sessions, "Europe/Amsterdam")
     assert sensors["training_sessies_totaal"]["value"] == 1
     last = sensors["training_laatste_sessie"]
-    # Each sample set takes 30 s, so the first exercise started at 10:51:30
+    # Each sample set takes 30 s, so the first exercise started at 10:51:30; one round, ends at the last stamp
     assert last["attrs"]["tijd"] == "10:51–11:20"
     assert last["attrs"]["datum"] == "za 31 okt 2026"
     assert last["attrs"]["toestellen"] == 3
@@ -324,3 +324,16 @@ def test_sessions_far_apart_are_separate():
     longer = {key: {**stored[key], "eind": "2026-10-01T09:59:00+00:00"}}
     merge_sessions(stored, longer)
     assert len(stored) == 2 and stored[key]["eind"] == "2026-10-01T09:59:00+00:00"
+
+
+def test_session_end_counts_the_rounds():
+    from custom_components.egym.convert import workouts_to_sessions
+    from .sample_data import _exercise, _workout
+    # Two rounds over 8 machines: stamps from 16:00 to 16:14 are the first round, so the session ends ~16:29
+    workouts = [_workout("2026-11-02T16:14:00", [
+        _exercise(500 + i, f"EGYM Machine {i}", f"2026-11-02T16:{i * 2:02d}:00", [(40.0, 15), (40.0, 15)])
+        for i in range(8)
+    ])]
+    (session,) = workouts_to_sessions(workouts).values()
+    assert session["start"] == "2026-11-02T14:59:30+00:00"  # 16:00 minus one 30 s set
+    assert session["eind"] == "2026-11-02T15:28:30+00:00"  # start + 2 x 14.5 min
