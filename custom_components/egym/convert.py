@@ -442,7 +442,7 @@ def _strength_by_machine(history):
     }
 
 
-def intensity(history):
+def intensity(history, method="all"):
     """Training weight as % of the strength test in effect at each session: {oefening_X: (name, [(time, pct)])}.
 
     The weight is the heaviest set of the session, classic and other methods together (for eccentric sets
@@ -455,6 +455,9 @@ def intensity(history):
     for object_id, item in history.items():
         label = _other_method(object_id)
         if not (_is_classic_weight(object_id) or (label and object_id.endswith("_gewicht"))):
+            continue
+        # method: "all", "klassiek" (classic sets only) or a method label such as "excentrisch"
+        if method != "all" and (label or "klassiek") != method:
             continue
         suffix = f"_{label}_gewicht" if label else "_gewicht"
         name_suffix = f" {label} gewicht" if label else " gewicht"
@@ -556,6 +559,11 @@ def progress_sensors(history, now, band=(40, 65)):
                 "band_bovengrens": high,
                 "per_toestel": dict(sorted(latest.items())),
                 "verloop": [[t, v] for t, v in sessions],
+                # The same per training method, so a switch between methods does not show as a jump
+                **{
+                    f"verloop_{label}": [[t, v] for t, v in session_intensity(intensity(history, label))]
+                    for label in ("klassiek", *sorted(set(METHOD_LABELS.values())))
+                },
             },
             measurement=False,
         )

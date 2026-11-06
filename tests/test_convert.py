@@ -337,3 +337,19 @@ def test_session_end_counts_the_rounds():
     (session,) = workouts_to_sessions(workouts).values()
     assert session["start"] == "2026-11-02T14:59:30+00:00"  # 16:00 minus one 30 s set
     assert session["eind"] == "2026-11-02T15:28:30+00:00"  # start + 2 x 14.5 min
+
+
+def test_intensity_per_method():
+    stats = {
+        **workouts_to_statistics([
+            _leg_press("2026-10-21T15:34:21", [("REGULAR_REPBASED", 62.0, 20)]),
+            _leg_press("2026-10-26T15:34:21", [("NEGATIVE_REPBASED", 50.0, 15)]),
+        ]),
+        **strength_to_statistics(STRENGTH),
+    }
+    history = history_values(stats)
+    assert [p for _t, p in intensity(history, "klassiek")["oefening_581"][1]][-1] == 59.0
+    assert [p for _t, p in intensity(history, "excentrisch")["oefening_581"][1]] == [61.0]
+    attrs = progress_sensors(history, datetime.datetime(2026, 10, 30, tzinfo=UTC))["training_intensiteit"]["attrs"]
+    assert attrs["verloop_klassiek"][-1][1] == 59.0
+    assert [v for _t, v in attrs["verloop_excentrisch"]] == [61.0]
